@@ -17,7 +17,7 @@ common warnings
 
 library
     import:           warnings
-    exposed-modules:  MyGhci
+    exposed-modules:  MyGhci, PrintNames
     -- other-modules:
     -- other-extensions:
     build-depends:    
