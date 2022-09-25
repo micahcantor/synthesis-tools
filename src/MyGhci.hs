@@ -7,14 +7,19 @@ import qualified Control.Exception as Exception
 import Control.Monad.IO.Class (MonadIO (liftIO))
 import qualified Data.Dynamic as Dynamic
 import qualified Data.List as List
+import qualified Data.Maybe as Maybe
 import GHC (Ghc, HscEnv)
 import qualified GHC
 import qualified GHC.Paths
-import qualified GHC.Types.Name as Name (getOccString)
+import qualified GHC.Types.Name as Name
+import qualified GHC.Types.TyThing as TyThing
+import qualified GHC.Types.Var as Var
 import System.Console.Haskeline (InputT)
 import qualified System.Console.Haskeline as Haskeline
 import qualified System.FilePath as FilePath
 import qualified Unsafe.Coerce as Coerce
+import qualified GHC.Utils.Outputable as Outputable
+import qualified GHC.Core.TyCo.Tidy as Type
 
 initSession :: IO HscEnv
 initSession = GHC.runGhc (Just GHC.Paths.libdir) $ do
@@ -60,9 +65,12 @@ load path = do
 
 browse :: Ghc ()
 browse = do
-  names <- GHC.getNamesInScope
+  names <- filter Name.isValName <$> GHC.getNamesInScope
+  tyThings <- Maybe.catMaybes <$> mapM GHC.lookupName names
+  let types = map (Type.tidyTopType . Var.varType . TyThing.tyThingId) tyThings
+  let typeStrings = map (show . Outputable.ppr) types
   let nameStrings = map Name.getOccString names
-  liftIO $ mapM_ putStrLn nameStrings
+  liftIO $ mapM_ putStrLn (zipWith (\name ty -> name <> " :: " <> ty) nameStrings typeStrings)
 
 eval :: String -> Ghc ()
 eval input = do
