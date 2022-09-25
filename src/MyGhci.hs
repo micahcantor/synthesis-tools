@@ -19,7 +19,7 @@ import qualified System.Console.Haskeline as Haskeline
 import qualified System.FilePath as FilePath
 import qualified Unsafe.Coerce as Coerce
 import qualified GHC.Utils.Outputable as Outputable
-import qualified GHC.Core.TyCo.Tidy as Type
+import qualified GHC.Core.Type as Type
 
 initSession :: IO HscEnv
 initSession = GHC.runGhc (Just GHC.Paths.libdir) $ do
