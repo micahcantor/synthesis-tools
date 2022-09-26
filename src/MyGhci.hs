@@ -70,7 +70,8 @@ browse = do
   let types = map (Type.tidyTopType . Var.varType . TyThing.tyThingId) tyThings
   let typeStrings = map (show . Outputable.ppr) types
   let nameStrings = map Name.getOccString names
-  liftIO $ mapM_ putStrLn (zipWith (\name ty -> name <> " :: " <> ty) nameStrings typeStrings)
+  let typeSignatures = zipWith (\name ty -> name <> " :: " <> ty) nameStrings typeStrings
+  liftIO $ mapM_ putStrLn typeSignatures
 
 eval :: String -> Ghc ()
 eval input = do
