@@ -20,5 +20,5 @@ Here's an example using `data/Example.hs`:
 Successfully loaded file: data/Example.hs
 >>> :browse
 <all Prelude definitions>
-hello
+hello :: String
 ```
