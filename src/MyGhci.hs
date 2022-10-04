@@ -20,6 +20,7 @@ import qualified System.FilePath as FilePath
 import qualified Unsafe.Coerce as Coerce
 import qualified GHC.Utils.Outputable as Outputable
 import qualified GHC.Core.Type as Type
+import AutoMonadStack
 
 -- create a new GHC interactive session with Prelude pre-loaded
 initSession :: IO HscEnv
@@ -45,6 +46,11 @@ ghcCatch action = liftIO $ do
       print err
       pure Nothing
     Right res -> pure (Just res)
+
+generateRunFunction :: String -> [String] -> Ghc ()
+generateRunFunction monadName functionNames = do
+  value <- makeRunStack monadName functionNames
+  liftIO (print value)
 
 -- Import a package into an interactive session
 addImport :: String -> Ghc ()
@@ -96,6 +102,7 @@ parseCommand cmd =
       "import" -> addImport (List.concat xs)
       ":load" -> load (List.concat xs)
       ":browse" -> browse
+      ":gen-stack" -> generateRunFunction (head xs) (tail xs)
       _ -> eval cmd
     [] -> pure ()
 

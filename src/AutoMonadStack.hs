@@ -2,16 +2,11 @@
 
 module AutoMonadStack where
 
-import GHC (HValue)
+import Control.Monad.IO.Class (MonadIO (liftIO))
+import GHC (HValue, Ghc)
 import qualified GHC
 import qualified GHC.Hs.Utils as Utils
-import qualified GHC.Paths
-
--- data Error
--- type StackM a = ExcepT Error Identity a
-
--- runEval :: StackM a -> Either Error a
--- runEval m = runExceptT (runIdentity m)
+import qualified GHC.Utils.Outputable as Outputable
 
 -- runFunctions = [runExceptT, runIdentity]
 
@@ -20,9 +15,14 @@ import qualified GHC.Paths
   - give that mkHsApps
   - give that to compileParseExpr to get an HValue -}
 
-makeRunStack :: String -> [String] -> IO HValue
-makeRunStack paramName functionNames = GHC.runGhc (Just GHC.Paths.libdir) $ do
+{- To do:
+  - Figure out how include extra parameters
+  - Add searching for the correct function in scope with the type we want -}
+
+makeRunStack :: String -> [String] -> Ghc HValue
+makeRunStack paramName functionNames = do
   paramExpr <- GHC.parseExpr paramName
   functionExprs <- mapM GHC.parseExpr functionNames
-  let app = Utils.mkHsApps paramExpr functionExprs
+  let app = foldr Utils.mkHsApp paramExpr functionExprs
+  liftIO (print (Outputable.ppr app))
   GHC.compileParsedExpr app
