@@ -21,6 +21,7 @@ import qualified Unsafe.Coerce as Coerce
 import qualified GHC.Utils.Outputable as Outputable
 import qualified GHC.Core.Type as Type
 
+-- create a new GHC interactive session with Prelude pre-loaded
 initSession :: IO HscEnv
 initSession = GHC.runGhc (Just GHC.Paths.libdir) $ do
   dflags <- GHC.getSessionDynFlags
@@ -28,12 +29,14 @@ initSession = GHC.runGhc (Just GHC.Paths.libdir) $ do
   GHC.setContext [GHC.IIDecl (GHC.simpleImportDecl (GHC.mkModuleName "Prelude"))]
   GHC.getSession
 
-session :: HscEnv -> Ghc () -> IO HscEnv
-session env action = GHC.runGhc (Just GHC.Paths.libdir) $ do
+-- Run a Ghc action with a given environment
+withEnv :: HscEnv -> Ghc () -> IO HscEnv
+withEnv env action = GHC.runGhc (Just GHC.Paths.libdir) $ do
   GHC.setSession env
   action
   GHC.getSession
 
+-- run a Ghc action, catch and print any exception it throws
 ghcCatch :: MonadIO m => IO a -> m (Maybe a)
 ghcCatch action = liftIO $ do
   result <- Exception.try action
@@ -43,12 +46,14 @@ ghcCatch action = liftIO $ do
       pure Nothing
     Right res -> pure (Just res)
 
+-- Import a package into an interactive session
 addImport :: String -> Ghc ()
 addImport name = do
   let importedModule = GHC.IIDecl (GHC.simpleImportDecl (GHC.mkModuleName name))
   ctx <- GHC.getContext
   GHC.setContext (importedModule : ctx)
 
+-- Load a Haskell file into an interactive session
 load :: String -> Ghc ()
 load path = do
   target <- GHC.guessTarget path Nothing
@@ -63,6 +68,7 @@ load path = do
     GHC.Failed ->
       liftIO $ putStrLn ("Failed to load file: " <> path)
 
+-- List all available top-level names in the current interactive session.
 browse :: Ghc ()
 browse = do
   names <- filter Name.isValName <$> GHC.getNamesInScope
@@ -73,6 +79,7 @@ browse = do
   let typeSignatures = zipWith (\name ty -> name <> " :: " <> ty) nameStrings typeStrings
   liftIO $ mapM_ putStrLn typeSignatures
 
+-- Evaluate a Haskell expression or IO action in the current interactive session.
 eval :: String -> Ghc ()
 eval input = do
   dyn <- Dynamic.fromDynamic <$> GHC.dynCompileExpr input
@@ -99,7 +106,7 @@ repl env = do
     Nothing -> Haskeline.outputStrLn "Goodbye."
     Just input -> do
       let action = parseCommand input
-      envResult <- ghcCatch (session env action)
+      envResult <- ghcCatch (withEnv env action)
       case envResult of
         Nothing -> repl env
         Just env' -> repl env'
