@@ -15,17 +15,7 @@ import qualified GHC.Types.TyThing as TyThing
 import qualified GHC.Types.Var as Var
 import qualified GHC.Utils.Outputable as Outputable
 import GHC.Hs (GhcPs)
-
--- runFunctions = [runExceptT, runIdentity]
-
-{- idea:
-  - use parseExpr on String names to get LHsExprs
-  - give that mkHsApps
-  - give that to compileParseExpr to get an HValue -}
-
-{- To do:
-  - Figure out how include extra parameters
-  - Add searching for the correct function in scope with the type we want -}
+import GHC.Core.TyCon (TyCon)
 
 -- get inner monad from outer stack
 getInnerMonad :: Type -> Type
@@ -55,11 +45,11 @@ isUnwrappingType stackType ty =
 
 -- construct the Identity monad type
 getIdentityType :: Ghc Type
-getIdentityType = _
+getIdentityType = undefined
 
 -- construct the IO monad type
-getIOType :: Ghc Type
-getIOType = _
+getIOTyCon :: Ghc TyCon
+getIOTyCon = undefined
 
 getBindingIdsInScope :: Ghc [Id]
 getBindingIdsInScope = do
@@ -77,7 +67,7 @@ getTypesInScope = do
 synthesizeRunStack :: LHsExpr GhcPs -> Type -> Ghc HValue
 synthesizeRunStack stackExpr stackType = do
   identityType <- getIdentityType
-  ioType <- getIOType
+  ioTyCon <- getIOTyCon
   unwrappers <- getUnwrappers stackType ioType identityType
   let app = foldr Utils.mkHsApp stackExpr unwrappers
   GHC.compileParsedExpr app
