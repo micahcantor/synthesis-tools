@@ -21,6 +21,7 @@ import qualified Unsafe.Coerce as Coerce
 import qualified GHC.Utils.Outputable as Outputable
 import qualified GHC.Core.Type as Type
 import AutoMonadStack
+import TypeConstraints
 
 -- create a new GHC interactive session with Prelude pre-loaded
 initSession :: IO HscEnv
@@ -103,6 +104,7 @@ parseCommand cmd =
       ":load" -> load (List.concat xs)
       ":browse" -> browse
       ":gen-stack" -> generateRunFunction (head xs) (tail xs)
+      ":browse-name" -> getTypeSigniture x
       _ -> eval cmd
     [] -> pure ()
 

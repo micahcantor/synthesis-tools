@@ -33,7 +33,7 @@ getInnerMonad stackType = snd (Type.splitAppTys stackType) !! 1
 
 getUnwrappingFunctionExpr :: Type -> Ghc (LHsExpr GhcPs)
 getUnwrappingFunctionExpr stackType = do
-  ids <- getBindingIdsInScope 
+  ids <- getBindingIdsInScope
   let types = map Var.varType ids
   let unwrapperIdents = [ident | (ident, ty) <- zip ids types, isUnwrappingType stackType ty]
   unwrapperExprs <- mapM identToExpr unwrapperIdents
@@ -60,6 +60,28 @@ getIdentityType = _
 -- construct the IO monad type
 getIOType :: Ghc Type
 getIOType = _
+
+
+findType :: GHC.TyCon -> [(GHC.TyCon, Type)] -> [Type]
+findType tc l = do
+  (x,y) <- l
+  case Type.nonDetCmpTc x tc of
+    EQ -> pure y
+    _ -> []
+
+-- match the first type and the last type
+-- we only want those with tyConApp
+getFinalTy :: Type -> (Type, Type)
+getFinalTy t =
+  case t of
+    TyVarTy _ -> (t,t)
+    TyConApp _ _ -> (t,t)
+    AppTy _ ty -> getFinalTy ty
+    ForAllTy _ ty -> getFinalTy ty
+    FunTy _ _ _ ty -> (ty,t)
+    LitTy _ -> (t,t)
+    CastTy _ _ -> (t,t)
+    CoercionTy _ -> (t,t)
 
 getBindingIdsInScope :: Ghc [Id]
 getBindingIdsInScope = do
