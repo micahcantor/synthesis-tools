@@ -22,6 +22,8 @@ import qualified GHC.Utils.Outputable as Outputable
 import qualified GHC.Core.Type as Type
 import AutoMonadStack
 import TypeConstraints
+import GHC.Types.TyThing (TyThing)
+import GHC.Core.TyCon (TyCon)
 
 -- create a new GHC interactive session with Prelude pre-loaded
 initSession :: IO HscEnv
@@ -47,18 +49,6 @@ ghcCatch action = liftIO $ do
       print err
       pure Nothing
     Right res -> pure (Just res)
-
-generateRunFunction :: String -> [String] -> Ghc ()
-generateRunFunction monadName functionNames = do
-  value <- makeRunStack monadName functionNames
-  liftIO (print value)
-
--- Import a package into an interactive session
-addImport :: String -> Ghc ()
-addImport name = do
-  let importedModule = GHC.IIDecl (GHC.simpleImportDecl (GHC.mkModuleName name))
-  ctx <- GHC.getContext
-  GHC.setContext (importedModule : ctx)
 
 -- Load a Haskell file into an interactive session
 load :: String -> Ghc ()
@@ -86,6 +76,25 @@ browse = do
   let typeSignatures = zipWith (\name ty -> name <> " :: " <> ty) nameStrings typeStrings
   liftIO $ mapM_ putStrLn typeSignatures
 
+browseTyCons :: Ghc ()
+browseTyCons = do
+  tyConNames <- filter Name.isTyConName <$> GHC.getNamesInScope
+  tyThings <- Maybe.catMaybes <$> mapM GHC.lookupName tyConNames
+  let tyCons = Maybe.mapMaybe tyThingToTyCon tyThings
+  let tyConStrings = map (show . Outputable.ppr) tyCons
+  liftIO $ mapM_ putStrLn tyConStrings
+  where
+    tyThingToTyCon :: TyThing -> Maybe TyCon
+    tyThingToTyCon tyThing = case tyThing of
+      GHC.ATyCon tyCon -> Just tyCon
+      _ -> Nothing
+
+
+printType :: String -> Ghc ()
+printType name = do
+  ty <- GHC.exprType GHC.TM_Inst name
+  liftIO (print (Outputable.ppr ty))
+
 -- Evaluate a Haskell expression or IO action in the current interactive session.
 eval :: String -> Ghc ()
 eval input = do
@@ -103,8 +112,11 @@ parseCommand cmd =
       "import" -> addImport (List.concat xs)
       ":load" -> load (List.concat xs)
       ":browse" -> browse
-      ":gen-stack" -> generateRunFunction (head xs) (tail xs)
-      ":browse-name" -> getTypeSigniture x
+      ":browse-ty-cons" -> browseTyCons
+      ":type" -> printType (List.concat xs)
+      ":synth" -> do
+        runStackValue <- makeRunStack (List.concat xs)
+        liftIO (print runStackValue)
       _ -> eval cmd
     [] -> pure ()
 

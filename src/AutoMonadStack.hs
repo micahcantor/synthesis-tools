@@ -7,59 +7,82 @@ import qualified Data.Maybe as Maybe
 import GHC (Ghc, GhcPass, HValue, LHsExpr, Type)
 import qualified GHC
 import GHC.Core.TyCo.Rep (Type (..))
+import GHC.Core.TyCon (TyCon(..))
 import qualified GHC.Core.Type as Type
+import GHC.Hs (GhcPs)
 import qualified GHC.Hs.Utils as Utils
 import GHC.Types.Id (Id)
 import qualified GHC.Types.Name as Name
 import qualified GHC.Types.TyThing as TyThing
 import qualified GHC.Types.Var as Var
 import qualified GHC.Utils.Outputable as Outputable
-import GHC.Hs (GhcPs)
+import GHC.Types.TyThing (TyThing(..))
+import GHC.Stack (HasCallStack)
 
--- runFunctions = [runExceptT, runIdentity]
-
-{- idea:
-  - use parseExpr on String names to get LHsExprs
-  - give that mkHsApps
-  - give that to compileParseExpr to get an HValue -}
-
-{- To do:
-  - Figure out how include extra parameters
-  - Add searching for the correct function in scope with the type we want -}
+-- Import a package into an interactive session
+addImport :: String -> Ghc ()
+addImport name = do
+  let importedModule = GHC.IIDecl (GHC.simpleImportDecl (GHC.mkModuleName name))
+  ctx <- GHC.getContext
+  GHC.setContext (importedModule : ctx)
 
 -- get inner monad from outer stack
 getInnerMonad :: Type -> Type
-getInnerMonad stackType = snd (Type.splitAppTys stackType) !! 1
+getInnerMonad stackType = snd (Type.splitAppTys (removeForAll stackType)) !! 1
 
 getUnwrappingFunctionExpr :: Type -> Ghc (LHsExpr GhcPs)
 getUnwrappingFunctionExpr stackType = do
-  ids <- getBindingIdsInScope
-  let types = map Var.varType ids
-  let unwrapperIdents = [ident | (ident, ty) <- zip ids types, isUnwrappingType stackType ty]
-  unwrapperExprs <- mapM identToExpr unwrapperIdents
+  let stackTyCon = Maybe.fromJust $ tyToTyCon (removeForAll stackType)
+  idents <- getBindingIdsInScope
+  let types = map Var.varType idents
+  let unwrapperIdents = [ident | (ident, ty) <- zip idents types, isUnwrappingType ty stackTyCon]
+  liftIO (print (map Outputable.ppr unwrapperIdents))
+  unwrapperExprs <- traverse identToExpr unwrapperIdents
   pure (head unwrapperExprs)
+  where
+    isUnwrappingType :: Type -> TyCon -> Bool
+    isUnwrappingType ty tyCon =
+      case Type.splitFunTy_maybe (removeForAll ty) of
+        Just (_, argType, _) -> tyToTyCon argType == Just tyCon
+        Nothing -> False
+
+tyThingTyCon :: TyThing -> Maybe TyCon
+tyThingTyCon tyThing = case tyThing of
+  ATyCon tyCon -> Just tyCon
+  _ -> Nothing
+
+tyToTyCon :: Type -> Maybe TyCon
+tyToTyCon ty = case ty of
+  TyConApp tyCon _ -> Just tyCon
+  _ -> Nothing
 
 identToExpr :: Id -> Ghc (LHsExpr GhcPs)
-identToExpr = GHC.parseExpr . show  . Outputable.ppr  . Var.varName
+identToExpr = GHC.parseExpr . show . Outputable.ppr . Var.varName
 
 removeForAll :: Type -> Type
 removeForAll t = case t of
   ForAllTy _ t1 -> removeForAll t1
   _ -> t
 
-isUnwrappingType :: Type -> Type -> Bool
-isUnwrappingType stackType ty =
-  case Type.splitFunTy_maybe (removeForAll ty) of
-    Just (_, argType, _) -> Type.eqType argType stackType
-    Nothing -> False
+getTyConInScope :: HasCallStack => String -> Ghc TyCon
+getTyConInScope s = do
+  names <- GHC.parseName s
+  tyThings <- Maybe.catMaybes <$> traverse GHC.lookupName names
+  let tyCons = Maybe.mapMaybe tyThingTyCon tyThings
+  pure (head tyCons)
 
 -- construct the Identity monad type
-getIdentityType :: Ghc Type
-getIdentityType = _
+getIdentityTyCon :: Ghc TyCon
+getIdentityTyCon = do
+  addImport "Data.Functor.Identity"
+  getTyConInScope "Identity"
+
+getUnwrapIdentity :: Ghc (LHsExpr GhcPs)
+getUnwrapIdentity = undefined
 
 -- construct the IO monad type
-getIOType :: Ghc Type
-getIOType = _
+getIOTyCon :: Ghc TyCon
+getIOTyCon = getTyConInScope "IO"
 
 
 findType :: GHC.TyCon -> [(GHC.TyCon, Type)] -> [Type]
@@ -86,40 +109,36 @@ getFinalTy t =
 getBindingIdsInScope :: Ghc [Id]
 getBindingIdsInScope = do
   names <- filter Name.isValName <$> GHC.getNamesInScope
-  tyThings <- Maybe.catMaybes <$> mapM GHC.lookupName names
+  tyThings <- Maybe.catMaybes <$> traverse GHC.lookupName names
   let ids = map TyThing.tyThingId tyThings
   pure ids
 
-getTypesInScope :: Ghc [Type]
-getTypesInScope = do
-  bindings <- GHC.getBindings
-  let bindingTypes = map (Var.varType . TyThing.tyThingId) bindings
-  pure bindingTypes
-
 synthesizeRunStack :: LHsExpr GhcPs -> Type -> Ghc HValue
 synthesizeRunStack stackExpr stackType = do
-  identityType <- getIdentityType
-  ioType <- getIOType
-  unwrappers <- getUnwrappers stackType ioType identityType
+  identityTyCon <- getIdentityTyCon
+  ioTyCon <- getIOTyCon
+  liftIO (print (Outputable.ppr ioTyCon, Outputable.ppr identityTyCon))
+  unwrappers <- getUnwrappers stackType ioTyCon identityTyCon
   let app = foldr Utils.mkHsApp stackExpr unwrappers
+  liftIO (print (Outputable.ppr app))
   GHC.compileParsedExpr app
   where
     -- recursively get unwrapping functions for the stack
-    getUnwrappers :: Type -> Type -> Type -> Ghc [LHsExpr GhcPs]
-    getUnwrappers stack ioType identityType
-      | Type.eqType ioType stackType = pure []
-      | Type.eqType identityType stack = do
-          unwrapIdentity <- getUnwrappingFunctionExpr identityType
+    getUnwrappers :: Type -> TyCon -> TyCon -> Ghc [LHsExpr GhcPs]
+    getUnwrappers stackType' ioTyCon identityTyCon
+      | Just ioTyCon == tyToTyCon stackType' = pure []
+      | Just identityTyCon == tyToTyCon stackType' = do
+          unwrapIdentity <- getUnwrapIdentity
           pure [unwrapIdentity]
       | otherwise = do
-          unwrapper <- getUnwrappingFunctionExpr stackType
-          innerUnwrappers <- getUnwrappers (getInnerMonad stackType) ioType identityType
-          pure $ unwrapper : innerUnwrappers
+          unwrapper <- getUnwrappingFunctionExpr stackType'
+          innerUnwrappers <- getUnwrappers (getInnerMonad stackType') ioTyCon identityTyCon
+          pure (unwrapper : innerUnwrappers)
 
-makeRunStack :: String -> [String] -> Ghc HValue
-makeRunStack paramName functionNames = do
-  paramExpr <- GHC.parseExpr paramName
-  functionExprs <- mapM GHC.parseExpr functionNames
-  let app = foldr Utils.mkHsApp paramExpr functionExprs
-  liftIO (print (Outputable.ppr app))
-  GHC.compileParsedExpr app
+
+makeRunStack :: String -> Ghc HValue
+makeRunStack stackName = do
+  stackExpr <- GHC.parseExpr stackName
+  stackType <- GHC.exprType GHC.TM_Inst stackName
+  liftIO (print (Outputable.ppr stackExpr, Outputable.ppr stackType))
+  synthesizeRunStack stackExpr stackType
