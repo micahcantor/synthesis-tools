@@ -49,18 +49,6 @@ ghcCatch action = liftIO $ do
       pure Nothing
     Right res -> pure (Just res)
 
-generateRunFunction :: String -> [String] -> Ghc ()
-generateRunFunction monadName functionNames = do
-  value <- makeRunStack monadName functionNames
-  liftIO (print value)
-
--- Import a package into an interactive session
-addImport :: String -> Ghc ()
-addImport name = do
-  let importedModule = GHC.IIDecl (GHC.simpleImportDecl (GHC.mkModuleName name))
-  ctx <- GHC.getContext
-  GHC.setContext (importedModule : ctx)
-
 -- Load a Haskell file into an interactive session
 load :: String -> Ghc ()
 load path = do
@@ -125,7 +113,9 @@ parseCommand cmd =
       ":browse" -> browse
       ":browse-ty-cons" -> browseTyCons
       ":type" -> printType (List.concat xs)
-      ":gen-stack" -> generateRunFunction (head xs) (tail xs)
+      ":synth" -> do
+        runStackValue <- makeRunStack (List.concat xs)
+        liftIO (print runStackValue)
       _ -> eval cmd
     [] -> pure ()
 
