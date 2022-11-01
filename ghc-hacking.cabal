@@ -17,10 +17,10 @@ common warnings
 
 library
     import:           warnings
-    exposed-modules:  MyGhci, AutoMonadStack
+    exposed-modules:  MyGhci, AutoMonadStack, TypeConstraints
     -- other-modules:
     -- other-extensions:
-    build-depends:    
+    build-depends:
         base ^>=4.16.3.0,
         filepath,
         ghc,

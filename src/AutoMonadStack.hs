@@ -7,7 +7,6 @@ import qualified Data.Maybe as Maybe
 import GHC (Ghc, GhcPass, HValue, LHsExpr, Type)
 import qualified GHC
 import GHC.Core.TyCo.Rep (Type (..))
-import GHC.Core.TyCon (TyCon(..))
 import qualified GHC.Core.Type as Type
 import GHC.Hs (GhcPs)
 import qualified GHC.Hs.Utils as Utils
@@ -18,6 +17,8 @@ import qualified GHC.Types.Var as Var
 import qualified GHC.Utils.Outputable as Outputable
 import GHC.Types.TyThing (TyThing(..))
 import GHC.Stack (HasCallStack)
+import GHC.Builtin.Names
+import GHC.Core.TyCon
 
 -- Import a package into an interactive session
 addImport :: String -> Ghc ()
@@ -117,7 +118,8 @@ synthesizeRunStack :: LHsExpr GhcPs -> Type -> Ghc HValue
 synthesizeRunStack stackExpr stackType = do
   identityTyCon <- getIdentityTyCon
   ioTyCon <- getIOTyCon
-  liftIO (print (Outputable.ppr ioTyCon, Outputable.ppr identityTyCon))
+  someTyCon <- getTyConInScope "Asdsd"
+  liftIO (print (getUnique ioTyCon, Outputable.ppr (synTyConRhs_maybe someTyCon), getUnique someTyCon, Type.nonDetCmpTc someTyCon identityTyCon))
   unwrappers <- getUnwrappers stackType ioTyCon identityTyCon
   let app = foldr Utils.mkHsApp stackExpr unwrappers
   liftIO (print (Outputable.ppr app))
