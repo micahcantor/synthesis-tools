@@ -21,6 +21,7 @@ import qualified Unsafe.Coerce as Coerce
 import qualified GHC.Utils.Outputable as Outputable
 import qualified GHC.Core.Type as Type
 import AutoMonadStack
+import TypeConstraints
 import GHC.Types.TyThing (TyThing)
 import GHC.Core.TyCon (TyCon)
 

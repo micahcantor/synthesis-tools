@@ -7,7 +7,6 @@ import qualified Data.Maybe as Maybe
 import GHC (Ghc, GhcPass, HValue, LHsExpr, Type)
 import qualified GHC
 import GHC.Core.TyCo.Rep (Type (..))
-import GHC.Core.TyCon (TyCon(..))
 import qualified GHC.Core.Type as Type
 import GHC.Hs (GhcPs)
 import qualified GHC.Hs.Utils as Utils
@@ -18,6 +17,8 @@ import qualified GHC.Types.Var as Var
 import qualified GHC.Utils.Outputable as Outputable
 import GHC.Types.TyThing (TyThing(..))
 import GHC.Stack (HasCallStack)
+import GHC.Builtin.Names
+import GHC.Core.TyCon
 
 -- Import a package into an interactive session
 addImport :: String -> Ghc ()
@@ -95,6 +96,28 @@ getUnwrapIdentity = do
 getIOTyCon :: Ghc TyCon
 getIOTyCon = getTyConInScope "IO"
 
+
+findType :: GHC.TyCon -> [(GHC.TyCon, Type)] -> [Type]
+findType tc l = do
+  (x,y) <- l
+  case Type.nonDetCmpTc x tc of
+    EQ -> pure y
+    _ -> []
+
+-- match the first type and the last type
+-- we only want those with tyConApp
+getFinalTy :: Type -> (Type, Type)
+getFinalTy t =
+  case t of
+    TyVarTy _ -> (t,t)
+    TyConApp _ _ -> (t,t)
+    AppTy _ ty -> getFinalTy ty
+    ForAllTy _ ty -> getFinalTy ty
+    FunTy _ _ _ ty -> (ty,t)
+    LitTy _ -> (t,t)
+    CastTy _ _ -> (t,t)
+    CoercionTy _ -> (t,t)
+
 getBindingIdsInScope :: Ghc [Id]
 getBindingIdsInScope = do
   names <- filter Name.isValName <$> GHC.getNamesInScope
@@ -106,7 +129,8 @@ synthesizeRunStack :: LHsExpr GhcPs -> Type -> Ghc HValue
 synthesizeRunStack stackExpr stackType = do
   identityTyCon <- getIdentityTyCon
   ioTyCon <- getIOTyCon
-  liftIO (print (Outputable.ppr ioTyCon, Outputable.ppr identityTyCon))
+  someTyCon <- getTyConInScope "Asdsd"
+  liftIO (print (getUnique ioTyCon, Outputable.ppr (synTyConRhs_maybe someTyCon), getUnique someTyCon, Type.nonDetCmpTc someTyCon identityTyCon))
   unwrappers <- getUnwrappers stackType ioTyCon identityTyCon
   let app = foldr Utils.mkHsApp stackExpr unwrappers
   liftIO (print (Outputable.ppr app))
@@ -123,6 +147,7 @@ synthesizeRunStack stackExpr stackType = do
           unwrapper <- getUnwrappingFunctionExpr stackType'
           innerUnwrappers <- getUnwrappers (getInnerMonad stackType') ioTyCon identityTyCon
           pure (unwrapper : innerUnwrappers)
+
 
 makeRunStack :: String -> Ghc HValue
 makeRunStack stackName = do

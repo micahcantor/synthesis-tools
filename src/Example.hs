@@ -16,5 +16,15 @@ type StackM a = ExceptT Error IO a
 myStack :: ExceptT Error IO a
 myStack = undefined
 
+type Asdsd a = Identity a
+
 runEval :: StackM a -> Either Error a
+
+
+
+-- hello :: Int -> Identity Int
+-- hello = Identity
+somef :: Int -> Int
+somef x = x + 1
 runEval = undefined
+
