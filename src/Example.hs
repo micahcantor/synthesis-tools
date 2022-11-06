@@ -13,7 +13,7 @@ config = undefined
 
 type StackM a = ExceptT Error IO a
 
-myStack :: StackM a
+myStack :: ExceptT Error IO a
 myStack = undefined
 
 runEval :: StackM a -> Either Error a

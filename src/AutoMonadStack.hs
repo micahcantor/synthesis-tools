@@ -64,6 +64,7 @@ removeForAll t = case t of
   ForAllTy _ t1 -> removeForAll t1
   _ -> t
 
+-- Get a TyCon in the current scope, throw if not found
 getTyConInScope :: HasCallStack => String -> Ghc TyCon
 getTyConInScope s = do
   names <- GHC.parseName s
@@ -71,14 +72,24 @@ getTyConInScope s = do
   let tyCons = Maybe.mapMaybe tyThingTyCon tyThings
   pure (head tyCons)
 
+-- Get an expression in the current scope, throw if not found
+getExprInScope :: HasCallStack => String -> Ghc (LHsExpr GhcPs)
+getExprInScope s = do
+  names <- GHC.parseName s
+  tyThings <- Maybe.catMaybes <$> traverse GHC.lookupName names 
+  let ids = map TyThing.tyThingId tyThings
+  identToExpr (head ids)
+
 -- construct the Identity monad type
 getIdentityTyCon :: Ghc TyCon
 getIdentityTyCon = do
   addImport "Data.Functor.Identity"
   getTyConInScope "Identity"
 
-getUnwrapIdentity :: Ghc (LHsExpr GhcPs)
-getUnwrapIdentity = undefined
+getUnwrapIdentity :: HasCallStack => Ghc (LHsExpr GhcPs)
+getUnwrapIdentity = do
+  addImport "Data.Functor.Identity"
+  getExprInScope "runIdentity"
 
 -- construct the IO monad type
 getIOTyCon :: Ghc TyCon
