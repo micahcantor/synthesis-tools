@@ -105,10 +105,15 @@ lookupTyConSynonym tyCon =
     Just ty -> lookupTyConSynonym (Maybe.fromJust (tyToTyCon ty))
     Nothing -> tyCon
 
--- Get the arity of a function type
+-- Get the arity of a funtion type, return 0 if not function
 getArity :: Type -> Int
-getArity funTy = _
+getArity = go . removeForAll
+  where
+    go ty = case ty of
+      FunTy _ _ _ resultTy ->
+        1 + getArity resultTy
+      _ -> 0
 
 -- construct a hole ('_') expression
-holeExpr :: LHsExpr GhcPs
-holeExpr = _
+getHoleExpr :: Ghc (LHsExpr GhcPs)
+getHoleExpr = GHC.parseExpr "_"
