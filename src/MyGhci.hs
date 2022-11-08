@@ -10,20 +10,20 @@ import qualified Data.List as List
 import qualified Data.Maybe as Maybe
 import GHC (Ghc, HscEnv)
 import qualified GHC
+import GHC.Core.TyCon (TyCon)
+import qualified GHC.Core.Type as Type
 import qualified GHC.Paths
 import qualified GHC.Types.Name as Name
+import GHC.Types.TyThing (TyThing)
 import qualified GHC.Types.TyThing as TyThing
 import qualified GHC.Types.Var as Var
+import qualified GHC.Utils.Outputable as Outputable
+import Synthesize.GHC (addImport)
+import Synthesize.MonadTransformer (makeRunStack)
 import System.Console.Haskeline (InputT)
 import qualified System.Console.Haskeline as Haskeline
 import qualified System.FilePath as FilePath
 import qualified Unsafe.Coerce as Coerce
-import qualified GHC.Utils.Outputable as Outputable
-import qualified GHC.Core.Type as Type
-import AutoMonadStack
-import TypeConstraints
-import GHC.Types.TyThing (TyThing)
-import GHC.Core.TyCon (TyCon)
 
 -- create a new GHC interactive session with Prelude pre-loaded
 initSession :: IO HscEnv
@@ -88,7 +88,6 @@ browseTyCons = do
     tyThingToTyCon tyThing = case tyThing of
       GHC.ATyCon tyCon -> Just tyCon
       _ -> Nothing
-
 
 printType :: String -> Ghc ()
 printType name = do
