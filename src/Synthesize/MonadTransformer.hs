@@ -14,6 +14,7 @@ import qualified GHC.Types.Var as Var
 import qualified GHC.Utils.Outputable as Outputable
 import Synthesize.GHC
 
+-- Try to get an unwrapping function for a given type
 getUnwrappingFunctionExpr :: HasCallStack => Type -> Ghc (LHsExpr GhcPs)
 getUnwrappingFunctionExpr stackType = do
   let stackTyCon = Maybe.fromJust $ tyToTyCon (removeForAll stackType)
@@ -24,6 +25,7 @@ getUnwrappingFunctionExpr stackType = do
   unwrapperExprs <- traverse identToExpr unwrapperIdents
   pure (head unwrapperExprs)
   where
+    -- Is a TyCon the first argument of a given type?
     isUnwrappingType :: Type -> TyCon -> Bool
     isUnwrappingType ty tyCon =
       case Type.splitFunTy_maybe (removeForAll ty) of
@@ -32,6 +34,7 @@ getUnwrappingFunctionExpr stackType = do
           Nothing -> False
         Nothing -> False
 
+-- Synthesize an expression to run a monad stack, given the target expression and type
 synthesizeRunStack :: LHsExpr GhcPs -> Type -> Ghc HValue
 synthesizeRunStack stackExpr stackType = do
   identityTyCon <- getIdentityTyCon
@@ -41,7 +44,7 @@ synthesizeRunStack stackExpr stackType = do
   liftIO (print (Outputable.ppr app))
   GHC.compileParsedExpr app
   where
-    -- recursively get unwrapping functions for the stack
+    -- Recursively get unwrapping functions for the stack
     getUnwrappers :: Type -> TyCon -> TyCon -> Ghc [LHsExpr GhcPs]
     getUnwrappers stackType' ioTyCon identityTyCon
       | Just ioTyCon == tyToTyCon stackType' = pure []

@@ -22,19 +22,23 @@ addImport name = do
   ctx <- GHC.getContext
   GHC.setContext (importedModule : ctx)
 
+-- Try to convert a TyThing into a TyCon
 tyThingTyCon :: TyThing -> Maybe TyCon
 tyThingTyCon tyThing = case tyThing of
   ATyCon tyCon -> Just tyCon
   _ -> Nothing
 
+-- Try to convert a Type into a TyCon
 tyToTyCon :: Type -> Maybe TyCon
 tyToTyCon ty = case ty of
   TyConApp tyCon _ -> Just tyCon
   _ -> Nothing
 
+-- Convert an Id into a parsed expression
 identToExpr :: Id -> Ghc (LHsExpr GhcPs)
 identToExpr = GHC.parseExpr . show . Outputable.ppr . Var.varName
 
+-- Recursively remove the for all type constructors from a Type
 removeForAll :: Type -> Type
 removeForAll t = case t of
   ForAllTy _ t1 -> removeForAll t1
@@ -56,29 +60,23 @@ getExprInScope s = do
   let ids = map TyThing.tyThingId tyThings
   identToExpr (head ids)
 
--- construct the Identity monad type
+-- Construct the Identity monad type
 getIdentityTyCon :: Ghc TyCon
 getIdentityTyCon = do
   addImport "Data.Functor.Identity"
   getTyConInScope "Identity"
 
--- construct the runIdentity function
+-- Construct the runIdentity function
 getUnwrapIdentity :: HasCallStack => Ghc (LHsExpr GhcPs)
 getUnwrapIdentity = do
   addImport "Data.Functor.Identity"
   getExprInScope "runIdentity"
 
--- construct the IO monad type
+-- Construct the IO monad type
 getIOTyCon :: Ghc TyCon
 getIOTyCon = getTyConInScope "IO"
 
-findType :: GHC.TyCon -> [(GHC.TyCon, Type)] -> [Type]
-findType tc l = do
-  (x, y) <- l
-  case Type.nonDetCmpTc x tc of
-    EQ -> pure y
-    _ -> []
-
+-- Get all Ids of names in scope
 getBindingIdsInScope :: Ghc [Id]
 getBindingIdsInScope = do
   names <- filter Name.isValName <$> GHC.getNamesInScope
@@ -86,10 +84,11 @@ getBindingIdsInScope = do
   let ids = map TyThing.tyThingId tyThings
   pure ids
 
--- get inner monad from outer stack
+-- Get inner monad from outer stack
 getInnerMonad :: HasCallStack => Type -> Type
 getInnerMonad stackType = snd (Type.splitAppTys (removeForAll stackType)) !! 1
 
+-- Disambiguate a TyCon into its synonym, recursively
 lookupTyConSynonym :: TyCon -> TyCon
 lookupTyConSynonym tyCon =
   case TyCon.synTyConRhs_maybe tyCon of
