@@ -4,6 +4,7 @@ module Synthesize.MonadTransformer where
 
 import Control.Monad.IO.Class (MonadIO (liftIO))
 import qualified Data.Maybe as Maybe
+import Data.Traversable (for)
 import GHC (Ghc, HValue, LHsExpr, TyCon, Type)
 import qualified GHC
 import qualified GHC.Core.Type as Type
@@ -13,7 +14,7 @@ import GHC.Stack (HasCallStack)
 import qualified GHC.Types.Var as Var
 import qualified GHC.Utils.Outputable as Outputable
 import Synthesize.GHC
-import Data.Traversable (for)
+import Text.Printf (printf)
 
 -- Try to get an unwrapping function expression for a given type
 getUnwrappingFunctionExpr :: HasCallStack => Type -> Ghc TypedExpr
@@ -22,7 +23,6 @@ getUnwrappingFunctionExpr stackType = do
   idents <- getBindingIdsInScope
   let types = map Var.varType idents
   let unwrapperIdentTypes = [(ident, ty) | (ident, ty) <- zip idents types, isUnwrappingType ty stackTyCon]
-  liftIO (print (map Outputable.ppr unwrapperIdentTypes))
   unwrapperExprs <- for unwrapperIdentTypes $ \(ident, ty) -> do
     expr <- identToExpr ident
     pure (TypedExpr expr ty)
@@ -37,14 +37,20 @@ getUnwrappingFunctionExpr stackType = do
           Nothing -> False
         Nothing -> False
 
-buildUnwrapperApplication :: LHsExpr GhcPs -> [TypedExpr] -> LHsExpr GhcPs
-buildUnwrapperApplication stackExpr unwrapperTypedExprs =
-  case unwrapperTypedExprs of
-    [] -> stackExpr
-    (TypedExpr expr ty) : typedExprs -> 
-      if getArity ty == 1
-        then Hs.Utils.mkHsApp expr (buildUnwrapperApplication stackExpr typedExprs)
-        else Hs.Utils.mkHsApps expr [holeExpr, buildUnwrapperApplication stackExpr typedExprs]
+buildUnwrapperApplication :: LHsExpr GhcPs -> [TypedExpr] -> Ghc (LHsExpr GhcPs)
+buildUnwrapperApplication stackExpr unwrapperTypedExprs = do
+  holeExpr <- getHoleExpr
+  pure (go holeExpr unwrapperTypedExprs)
+  where
+    go holeExpr exprs = case exprs of
+      [] -> stackExpr
+      (TypedExpr expr ty) : typedExprs ->
+        let arity = getArity ty
+         in if arity == 1
+              then Hs.Utils.mkHsApp expr (go holeExpr typedExprs)
+              else
+                let holes = replicate (arity - 1) holeExpr
+                 in Hs.Utils.mkHsApps expr (holes ++ [go holeExpr typedExprs])
 
 -- Synthesize an expression to run a monad stack, given the target expression and type
 synthesizeRunStack :: LHsExpr GhcPs -> Type -> Ghc HValue
@@ -52,8 +58,8 @@ synthesizeRunStack stackExpr stackType = do
   identityTyCon <- getIdentityTyCon
   ioTyCon <- getIOTyCon
   unwrappers <- getUnwrappers stackType ioTyCon identityTyCon
-  let app = buildUnwrapperApplication stackExpr (reverse unwrappers)
-  liftIO (print (Outputable.ppr app))
+  app <- buildUnwrapperApplication stackExpr (reverse unwrappers)
+  liftIO (printf "Generated expr: %s\n" (show (Outputable.ppr app)))
   GHC.compileParsedExpr app
   where
     -- Recursively get unwrapping functions for the stack
@@ -72,5 +78,4 @@ makeRunStack :: String -> Ghc HValue
 makeRunStack stackName = do
   stackExpr <- GHC.parseExpr stackName
   stackType <- GHC.exprType GHC.TM_Inst stackName
-  liftIO (print (Outputable.ppr stackExpr, Outputable.ppr stackType))
   synthesizeRunStack stackExpr stackType

@@ -1,8 +1,8 @@
 module Example where
 
 import Control.Monad.Except (ExceptT, runExceptT)
-import Data.Functor.Identity (Identity (runIdentity))
 import Control.Monad.Reader (ReaderT (runReaderT))
+import Data.Functor.Identity (Identity (runIdentity))
 
 data Error
 
@@ -11,10 +11,18 @@ data Config
 config :: Config
 config = undefined
 
-type StackM a = ExceptT Error Identity a
+type ErrorStack a = ExceptT Error Identity a
 
-runStackM :: StackM a -> Either Error a
+runStackM :: ErrorStack a -> Either Error a
 runStackM m = runIdentity (runExceptT m)
 
-myStack :: StackM a
-myStack = undefined
+myErrorStack :: ErrorStack a
+myErrorStack = undefined
+
+type ReaderStack a = ReaderT Config (ExceptT Error Identity) a
+
+runReaderStack :: ReaderStack a -> Either Error a
+runReaderStack m = runIdentity (runExceptT (runReaderT undefined m))
+
+myReaderStack :: ReaderStack a
+myReaderStack = undefined
