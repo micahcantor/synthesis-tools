@@ -17,7 +17,7 @@ common warnings
 
 library
     import:           warnings
-    exposed-modules:  MyGhci, AutoMonadStack, TypeConstraints
+    exposed-modules:  Synthesize.GHC, Synthesize.MonadTransformer, MyGhci
     -- other-modules:
     -- other-extensions:
     build-depends:
