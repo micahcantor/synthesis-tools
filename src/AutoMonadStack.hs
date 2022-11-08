@@ -114,6 +114,43 @@ getBindingIdsInScope = do
   let ids = map TyThing.tyThingId tyThings
   pure ids
 
+
+tyConToType :: GHC.TyCon -> Either GHC.TyCon Type
+tyConToType tc =
+  case synTyConRhs_maybe tc of
+    Nothing -> Left tc
+    Just t -> Right t
+
+typeToTyCon :: Type -> Either Type GHC.TyCon
+typeToTyCon t =
+  case t of
+    (TyConApp tc _) -> Right tc
+    _               -> Left t
+
+unwrapTyCon :: GHC.TyCon -> Either Type GHC.TyCon
+unwrapTyCon tc =
+  case tyConToType tc of
+    Left _ -> Right tc
+    Right t -> case typeToTyCon t of
+                  Left ty   -> Left ty
+                  Right tc2 -> unwrapTyCon tc2
+
+
+
+
+eqTyCon :: GHC.TyCon -> GHC.TyCon -> Bool
+eqTyCon = undefined
+
+eqTyConTy :: GHC.TyCon -> Type -> Bool
+eqTyConTy = undefined
+
+
+eqTyTyCon :: GHC.TyCon -> Type -> Bool
+eqTyTyCon = undefined
+
+-- eqTyCon :: GHC.TyCon -> GHC.TyCon -> Bool
+-- eqTyCon = undefined
+
 synthesizeRunStack :: LHsExpr GhcPs -> Type -> Ghc HValue
 synthesizeRunStack stackExpr stackType = do
   identityTyCon <- getIdentityTyCon
