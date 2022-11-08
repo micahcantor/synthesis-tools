@@ -8,21 +8,24 @@ import GHC (Ghc, HValue, LHsExpr, TyCon, Type)
 import qualified GHC
 import qualified GHC.Core.Type as Type
 import GHC.Hs (GhcPs)
-import qualified GHC.Hs.Utils as Utils
+import qualified GHC.Hs.Utils as Hs.Utils
 import GHC.Stack (HasCallStack)
 import qualified GHC.Types.Var as Var
 import qualified GHC.Utils.Outputable as Outputable
 import Synthesize.GHC
+import Data.Traversable (for)
 
--- Try to get an unwrapping function for a given type
-getUnwrappingFunctionExpr :: HasCallStack => Type -> Ghc (LHsExpr GhcPs)
+-- Try to get an unwrapping function expression for a given type
+getUnwrappingFunctionExpr :: HasCallStack => Type -> Ghc TypedExpr
 getUnwrappingFunctionExpr stackType = do
   let stackTyCon = Maybe.fromJust $ tyToTyCon (removeForAll stackType)
   idents <- getBindingIdsInScope
   let types = map Var.varType idents
-  let unwrapperIdents = [ident | (ident, ty) <- zip idents types, isUnwrappingType ty stackTyCon]
-  liftIO (print (map Outputable.ppr unwrapperIdents))
-  unwrapperExprs <- traverse identToExpr unwrapperIdents
+  let unwrapperIdentTypes = [(ident, ty) | (ident, ty) <- zip idents types, isUnwrappingType ty stackTyCon]
+  liftIO (print (map Outputable.ppr unwrapperIdentTypes))
+  unwrapperExprs <- for unwrapperIdentTypes $ \(ident, ty) -> do
+    expr <- identToExpr ident
+    pure (TypedExpr expr ty)
   pure (head unwrapperExprs)
   where
     -- Is a TyCon the first argument of a given type?
@@ -34,22 +37,31 @@ getUnwrappingFunctionExpr stackType = do
           Nothing -> False
         Nothing -> False
 
+buildUnwrapperApplication :: LHsExpr GhcPs -> [TypedExpr] -> LHsExpr GhcPs
+buildUnwrapperApplication stackExpr unwrapperTypedExprs =
+  case unwrapperTypedExprs of
+    [] -> stackExpr
+    (TypedExpr expr ty) : typedExprs -> 
+      if getArity ty == 1
+        then Hs.Utils.mkHsApp expr (buildUnwrapperApplication stackExpr typedExprs)
+        else Hs.Utils.mkHsApps expr [holeExpr, buildUnwrapperApplication stackExpr typedExprs]
+
 -- Synthesize an expression to run a monad stack, given the target expression and type
 synthesizeRunStack :: LHsExpr GhcPs -> Type -> Ghc HValue
 synthesizeRunStack stackExpr stackType = do
   identityTyCon <- getIdentityTyCon
   ioTyCon <- getIOTyCon
   unwrappers <- getUnwrappers stackType ioTyCon identityTyCon
-  let app = foldr Utils.mkHsApp stackExpr (reverse unwrappers)
+  let app = buildUnwrapperApplication stackExpr (reverse unwrappers)
   liftIO (print (Outputable.ppr app))
   GHC.compileParsedExpr app
   where
     -- Recursively get unwrapping functions for the stack
-    getUnwrappers :: Type -> TyCon -> TyCon -> Ghc [LHsExpr GhcPs]
+    getUnwrappers :: Type -> TyCon -> TyCon -> Ghc [TypedExpr]
     getUnwrappers stackType' ioTyCon identityTyCon
       | Just ioTyCon == tyToTyCon stackType' = pure []
       | Just identityTyCon == tyToTyCon stackType' = do
-          unwrapIdentity <- getUnwrapIdentity
+          unwrapIdentity <- getRunIdentityTypedExpr
           pure [unwrapIdentity]
       | otherwise = do
           unwrapper <- getUnwrappingFunctionExpr stackType'

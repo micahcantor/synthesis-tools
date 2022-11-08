@@ -15,6 +15,9 @@ import qualified GHC.Types.TyThing as TyThing
 import qualified GHC.Types.Var as Var
 import qualified GHC.Utils.Outputable as Outputable
 
+-- Convenience data type for packaging parsed expressions and types
+data TypedExpr = TypedExpr (LHsExpr GhcPs) Type
+
 -- Import a package into an interactive session
 addImport :: String -> Ghc ()
 addImport name = do
@@ -33,6 +36,13 @@ tyToTyCon :: Type -> Maybe TyCon
 tyToTyCon ty = case ty of
   TyConApp tyCon _ -> Just tyCon
   _ -> Nothing
+
+tyThingToTypedExpr :: TyThing -> Ghc TypedExpr
+tyThingToTypedExpr tyThing = do
+  let ident = TyThing.tyThingId tyThing
+  let ty = Var.varType ident
+  expr <- identToExpr ident
+  pure (TypedExpr expr ty)
 
 -- Convert an Id into a parsed expression
 identToExpr :: Id -> Ghc (LHsExpr GhcPs)
@@ -53,12 +63,12 @@ getTyConInScope s = do
   pure (head tyCons)
 
 -- Get an expression in the current scope, throw if not found
-getExprInScope :: HasCallStack => String -> Ghc (LHsExpr GhcPs)
-getExprInScope s = do
+getTypedExprInScope :: HasCallStack => String -> Ghc TypedExpr
+getTypedExprInScope s = do
   names <- GHC.parseName s
   tyThings <- Maybe.catMaybes <$> traverse GHC.lookupName names
-  let ids = map TyThing.tyThingId tyThings
-  identToExpr (head ids)
+  typedExprs <- traverse tyThingToTypedExpr tyThings
+  pure (head typedExprs)
 
 -- Construct the Identity monad type
 getIdentityTyCon :: Ghc TyCon
@@ -67,10 +77,10 @@ getIdentityTyCon = do
   getTyConInScope "Identity"
 
 -- Construct the runIdentity function
-getUnwrapIdentity :: HasCallStack => Ghc (LHsExpr GhcPs)
-getUnwrapIdentity = do
+getRunIdentityTypedExpr :: HasCallStack => Ghc TypedExpr
+getRunIdentityTypedExpr = do
   addImport "Data.Functor.Identity"
-  getExprInScope "runIdentity"
+  getTypedExprInScope "runIdentity"
 
 -- Construct the IO monad type
 getIOTyCon :: Ghc TyCon
@@ -94,3 +104,11 @@ lookupTyConSynonym tyCon =
   case TyCon.synTyConRhs_maybe tyCon of
     Just ty -> lookupTyConSynonym (Maybe.fromJust (tyToTyCon ty))
     Nothing -> tyCon
+
+-- Get the arity of a function type
+getArity :: Type -> Int
+getArity funTy = _
+
+-- construct a hole ('_') expression
+holeExpr :: LHsExpr GhcPs
+holeExpr = _
