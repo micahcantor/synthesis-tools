@@ -1,5 +1,3 @@
-{-# HLINT ignore "Eta reduce" #-}
-
 module Synthesize.MonadTransformer where
 
 import Control.Monad.IO.Class (MonadIO (liftIO))
@@ -7,7 +5,6 @@ import qualified Data.Maybe as Maybe
 import Data.Traversable (for)
 import GHC (Ghc, HValue, LHsExpr, TyCon, Type)
 import qualified GHC
-import qualified GHC.Core.Type as Type
 import GHC.Hs (GhcPs)
 import qualified GHC.Hs.Utils as Hs.Utils
 import GHC.Stack (HasCallStack)
@@ -31,19 +28,19 @@ getUnwrappingFunctionExpr stackType = do
     -- Is a TyCon the first argument of a given type?
     isUnwrappingType :: Type -> TyCon -> Bool
     isUnwrappingType ty tyCon =
-      case Type.splitFunTy_maybe (removeForAll ty) of
-        Just (_, argType, _) -> case tyToTyCon argType of
+      case getArgType ty of
+        Just argType -> case tyToTyCon argType of
           Just argTyCon -> lookupTyConSynonym tyCon == lookupTyConSynonym argTyCon
           Nothing -> False
         Nothing -> False
 
-buildUnwrapperApplication :: LHsExpr GhcPs -> [TypedExpr] -> Ghc (LHsExpr GhcPs)
-buildUnwrapperApplication stackExpr unwrapperTypedExprs = do
+buildUnwrapperApplication :: [TypedExpr] -> Ghc (LHsExpr GhcPs)
+buildUnwrapperApplication unwrapperTypedExprs = do
   holeExpr <- getHoleExpr
   pure (go holeExpr unwrapperTypedExprs)
   where
     go holeExpr exprs = case exprs of
-      [] -> stackExpr
+      [] -> holeExpr
       (TypedExpr expr ty) : typedExprs ->
         let arity = getArity ty
          in if arity == 1
@@ -52,14 +49,14 @@ buildUnwrapperApplication stackExpr unwrapperTypedExprs = do
                 let holes = replicate (arity - 1) holeExpr
                  in Hs.Utils.mkHsApps expr (holes ++ [go holeExpr typedExprs])
 
--- Synthesize an expression to run a monad stack, given the target expression and type
-synthesizeRunStack :: LHsExpr GhcPs -> Type -> Ghc HValue
-synthesizeRunStack stackExpr stackType = do
+-- Synthesize an expression to run a monad stack, given the target function name and stack type
+synthesizeRunStack :: Type -> Ghc HValue
+synthesizeRunStack stackType = do
   identityTyCon <- getIdentityTyCon
   ioTyCon <- getIOTyCon
   unwrappers <- getUnwrappers stackType ioTyCon identityTyCon
-  app <- buildUnwrapperApplication stackExpr (reverse unwrappers)
-  liftIO (printf "Generated expr: %s\n" (show (Outputable.ppr app)))
+  app <- buildUnwrapperApplication (reverse unwrappers)
+  liftIO $ printf "Generated expr: %s\n" (show (Outputable.ppr app))
   GHC.compileParsedExpr app
   where
     -- Recursively get unwrapping functions for the stack
@@ -74,8 +71,8 @@ synthesizeRunStack stackExpr stackType = do
           innerUnwrappers <- getUnwrappers (getInnerMonad stackType') ioTyCon identityTyCon
           pure (unwrapper : innerUnwrappers)
 
-makeRunStack :: String -> Ghc HValue
-makeRunStack stackName = do
-  stackExpr <- GHC.parseExpr stackName
-  stackType <- GHC.exprType GHC.TM_Inst stackName
-  synthesizeRunStack stackExpr stackType
+makeRunStack :: HasCallStack => String -> Ghc HValue
+makeRunStack functionName = do
+  functionType <- GHC.exprType GHC.TM_Inst functionName
+  let stackType = Maybe.fromJust $ getArgType functionType
+  synthesizeRunStack stackType
