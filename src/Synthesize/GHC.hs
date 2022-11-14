@@ -1,11 +1,13 @@
 module Synthesize.GHC where
 
 import qualified Data.Maybe as Maybe
-import GHC (Ghc, LHsExpr, TyCon, Type)
+import GHC (LHsExpr, TyCon, Type)
 import qualified GHC
 import GHC.Core.TyCo.Rep (Type (..))
+import GHC.Core.TyCon (synTyConRhs_maybe)
 import qualified GHC.Core.TyCon as TyCon
 import qualified GHC.Core.Type as Type
+import GHC.Driver.Monad (GhcMonad)
 import GHC.Hs (GhcPs)
 import GHC.Stack (HasCallStack)
 import GHC.Types.Id (Id)
@@ -14,13 +16,12 @@ import GHC.Types.TyThing (TyThing (..))
 import qualified GHC.Types.TyThing as TyThing
 import qualified GHC.Types.Var as Var
 import qualified GHC.Utils.Outputable as Outputable
-import GHC.Core.TyCon
 
 -- Convenience data type for packaging parsed expressions and types
 data TypedExpr = TypedExpr (LHsExpr GhcPs) Type
 
 -- Import a package into an interactive session
-addImport :: String -> Ghc ()
+addImport :: GhcMonad m => String -> m ()
 addImport name = do
   let importedModule = GHC.IIDecl (GHC.simpleImportDecl (GHC.mkModuleName name))
   ctx <- GHC.getContext
@@ -38,7 +39,7 @@ tyToTyCon ty = case ty of
   TyConApp tyCon _ -> Just tyCon
   _ -> Nothing
 
-tyThingToTypedExpr :: TyThing -> Ghc TypedExpr
+tyThingToTypedExpr :: GhcMonad m => TyThing -> m TypedExpr
 tyThingToTypedExpr tyThing = do
   let ident = TyThing.tyThingId tyThing
   let ty = Var.varType ident
@@ -46,7 +47,7 @@ tyThingToTypedExpr tyThing = do
   pure (TypedExpr expr ty)
 
 -- Convert an Id into a parsed expression
-identToExpr :: Id -> Ghc (LHsExpr GhcPs)
+identToExpr :: GhcMonad m => Id -> m (LHsExpr GhcPs)
 identToExpr = GHC.parseExpr . show . Outputable.ppr . Var.varName
 
 -- Recursively remove the for all type constructors from a Type
@@ -61,7 +62,7 @@ getArgType ty = do
   pure argType
 
 -- Get a TyCon in the current scope, throw if not found
-getTyConInScope :: HasCallStack => String -> Ghc TyCon
+getTyConInScope :: (HasCallStack, GhcMonad m) => String -> m TyCon
 getTyConInScope s = do
   names <- GHC.parseName s
   tyThings <- Maybe.catMaybes <$> traverse GHC.lookupName names
@@ -69,7 +70,7 @@ getTyConInScope s = do
   pure (head tyCons)
 
 -- Get an expression in the current scope, throw if not found
-getTypedExprInScope :: HasCallStack => String -> Ghc TypedExpr
+getTypedExprInScope :: (HasCallStack, GhcMonad m) => String -> m TypedExpr
 getTypedExprInScope s = do
   names <- GHC.parseName s
   tyThings <- Maybe.catMaybes <$> traverse GHC.lookupName names
@@ -77,23 +78,23 @@ getTypedExprInScope s = do
   pure (head typedExprs)
 
 -- Construct the Identity monad type
-getIdentityTyCon :: Ghc TyCon
+getIdentityTyCon :: GhcMonad m => m TyCon
 getIdentityTyCon = do
   addImport "Data.Functor.Identity"
   getTyConInScope "Identity"
 
 -- Construct the runIdentity function
-getRunIdentityTypedExpr :: HasCallStack => Ghc TypedExpr
+getRunIdentityTypedExpr :: (HasCallStack, GhcMonad m) => m TypedExpr
 getRunIdentityTypedExpr = do
   addImport "Data.Functor.Identity"
   getTypedExprInScope "runIdentity"
 
 -- Construct the IO monad type
-getIOTyCon :: Ghc TyCon
+getIOTyCon :: GhcMonad m => m TyCon
 getIOTyCon = getTyConInScope "IO"
 
 -- Get all Ids of names in scope
-getBindingIdsInScope :: Ghc [Id]
+getBindingIdsInScope :: GhcMonad m => m [Id]
 getBindingIdsInScope = do
   names <- filter Name.isValName <$> GHC.getNamesInScope
   tyThings <- Maybe.catMaybes <$> traverse GHC.lookupName names
@@ -120,11 +121,10 @@ getArity = go . removeForAll
         1 + getArity resultTy
       _ -> 0
 
-getHoleExpr :: Ghc (LHsExpr GhcPs)
+getHoleExpr :: GhcMonad m => m (LHsExpr GhcPs)
 getHoleExpr = GHC.parseExpr "_"
 
-
-
+--------------------------------------------
 
 tyConToType :: GHC.TyCon -> Either GHC.TyCon Type
 tyConToType tc =
@@ -154,5 +154,3 @@ eqTyConTy = undefined
 
 eqTyTyCon :: GHC.TyCon -> Type -> Bool
 eqTyTyCon = undefined
-
-
