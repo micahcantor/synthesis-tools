@@ -13,6 +13,11 @@ import qualified GHC.Utils.Outputable as Outputable
 import Synthesize.GHC
 import Text.Printf (printf)
 
+data SynthesisError
+  = UnknownTarget String
+  | InvalidTarget String 
+  | NoUnwrapperFound String
+
 -- Try to get an unwrapping function expression for a given type
 getUnwrappingFunctionExpr :: HasCallStack => Type -> Ghc TypedExpr
 getUnwrappingFunctionExpr stackType = do
