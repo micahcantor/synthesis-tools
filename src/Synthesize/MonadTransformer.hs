@@ -15,7 +15,7 @@ import Text.Printf (printf)
 
 data SynthesisError
   = UnknownTarget String
-  | InvalidTarget String 
+  | InvalidTarget String
   | NoUnwrapperFound String
 
 -- Try to get an unwrapping function expression for a given type
@@ -39,28 +39,29 @@ getUnwrappingFunctionExpr stackType = do
           Nothing -> False
         Nothing -> False
 
-buildUnwrapperApplication :: [TypedExpr] -> Ghc (LHsExpr GhcPs)
-buildUnwrapperApplication unwrapperTypedExprs = do
+buildUnwrapperApplication :: [TypedExpr] -> String -> Ghc (LHsExpr GhcPs)
+buildUnwrapperApplication unwrapperTypedExprs s = do
+  argExpr <- extractArgument <$> getFunc s
   holeExpr <- getHoleExpr
-  pure (go holeExpr unwrapperTypedExprs)
+  pure (go holeExpr argExpr unwrapperTypedExprs)
   where
-    go holeExpr exprs = case exprs of
-      [] -> holeExpr
+    go holeExpr argExpr exprs = case exprs of
+      [] -> argExpr
       (TypedExpr expr ty) : typedExprs ->
         let arity = getArity ty
          in if arity == 1
-              then Hs.Utils.mkHsApp expr (go holeExpr typedExprs)
+              then Hs.Utils.mkHsApp expr (go holeExpr argExpr typedExprs)
               else
                 let holes = replicate (arity - 1) holeExpr
-                 in Hs.Utils.mkHsApps expr (holes ++ [go holeExpr typedExprs])
+                 in Hs.Utils.mkHsApps expr (holes ++ [go holeExpr argExpr typedExprs])
 
 -- Synthesize an expression to run a monad stack, given the target function name and stack type
-synthesizeRunStack :: Type -> Ghc HValue
-synthesizeRunStack stackType = do
+synthesizeRunStack :: Type -> String -> Ghc HValue
+synthesizeRunStack stackType s = do
   identityTyCon <- getIdentityTyCon
   ioTyCon <- getIOTyCon
   unwrappers <- getUnwrappers stackType ioTyCon identityTyCon
-  app <- buildUnwrapperApplication (reverse unwrappers)
+  app <- buildUnwrapperApplication (reverse unwrappers) s
   liftIO $ printf "Generated expr: %s\n" (show (Outputable.ppr app))
   GHC.compileParsedExpr app
   where
@@ -76,8 +77,8 @@ synthesizeRunStack stackType = do
           innerUnwrappers <- getUnwrappers (getInnerMonad stackType') ioTyCon identityTyCon
           pure (unwrapper : innerUnwrappers)
 
-makeRunStack :: HasCallStack => String -> Ghc HValue
-makeRunStack functionName = do
+makeRunStack :: HasCallStack => String -> String -> Ghc HValue
+makeRunStack functionName f = do
   functionType <- GHC.exprType GHC.TM_Inst functionName
   let stackType = Maybe.fromJust $ getArgType functionType
-  synthesizeRunStack stackType
+  synthesizeRunStack stackType f

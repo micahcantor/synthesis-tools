@@ -15,6 +15,9 @@ import qualified GHC.Types.TyThing as TyThing
 import qualified GHC.Types.Var as Var
 import qualified GHC.Utils.Outputable as Outputable
 import GHC.Core.TyCon
+import GHC.Parser.Annotation as Annotation
+import GHC.Types.SrcLoc as SrcLoc
+import Language.Haskell.Syntax.Extension as Extension
 
 -- Convenience data type for packaging parsed expressions and types
 data TypedExpr = TypedExpr (LHsExpr GhcPs) Type
@@ -126,6 +129,16 @@ getHoleExpr = GHC.parseExpr "_"
 getFunc :: String -> Ghc (LHsExpr GhcPs)
 getFunc = GHC.parseExpr
 
+
+extractArgument :: LHsExpr GHC.GhcPs -> LHsExpr GHC.GhcPs
+extractArgument (SrcLoc.L y x) = case x of
+  GHC.HsApp _ _ (SrcLoc.L c b) -> case b of
+    GHC.HsApp _ a _ -> a
+    _ -> SrcLoc.L c b
+  _ -> SrcLoc.L y x
+
+argA :: Ghc (LHsExpr GHC.GhcPs)
+argA = extractArgument <$> getFunc "unwords a"
 
 
 tyConToType :: GHC.TyCon -> Either GHC.TyCon Type
