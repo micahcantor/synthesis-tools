@@ -113,9 +113,6 @@ parseCommand cmd =
       ":browse" -> browse
       ":browse-ty-cons" -> browseTyCons
       ":type" -> printType (List.concat xs)
-      ":synth" -> do
-        runStackValue <- makeRunStack (List.concat xs)
-        liftIO (print runStackValue)
       _ -> eval cmd
     [] -> pure ()
 
