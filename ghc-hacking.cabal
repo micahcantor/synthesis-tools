@@ -17,11 +17,12 @@ common warnings
 
 library
     import:           warnings
-    exposed-modules:  Synthesize.GHC, Synthesize.MonadTransformer, MyGhci
+    exposed-modules:  Synthesize.GHC, Synthesize.MonadTransformer, Synthesize.Run, MyGhci
     -- other-modules:
     -- other-extensions:
     build-depends:
         base ^>=4.16.3.0,
+        exceptions,
         filepath,
         ghc,
         ghc-paths,
