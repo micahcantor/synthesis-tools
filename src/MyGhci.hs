@@ -18,12 +18,18 @@ import GHC.Types.TyThing (TyThing)
 import qualified GHC.Types.TyThing as TyThing
 import qualified GHC.Types.Var as Var
 import qualified GHC.Utils.Outputable as Outputable
-import Synthesize.GHC (addImport)
+import Synthesize.GHC (addImport, getFunc)
 import Synthesize.MonadTransformer (makeRunStack)
 import System.Console.Haskeline (InputT)
 import qualified System.Console.Haskeline as Haskeline
 import qualified System.FilePath as FilePath
 import qualified Unsafe.Coerce as Coerce
+import GHC.Hs (LHsExpr)
+import GHC.Types.SrcLoc as SrcLoc
+
+import GHC.Parser.Annotation as Annotation
+import Language.Haskell.Syntax.Extension as Extension
+
 
 -- create a new GHC interactive session with Prelude pre-loaded
 initSession :: IO HscEnv
@@ -104,6 +110,29 @@ eval input = do
       liftIO (Coerce.unsafeCoerce action)
     Just action -> liftIO action
 
+
+-- noHsTok :: GHC.GenLocated Annotation.TokenLocation (HsToken tok)
+-- noHsTok = L NoTokenLoc HsTok
+
+-- gHsPar exist in 9.4.2, but not 9.2.4
+-- gHsPar :: LHsExpr (GHC.GhcPass id) -> HsExpr (GHC.GhcPass id)
+-- gHsPar e = GHC.HsPar Annotation.noAnn Annotation.noHsTok e Annotation.noHsTok
+
+matchLHsExpr :: LHsExpr GHC.GhcPs -> String
+matchLHsExpr (SrcLoc.L _ x) = case x of
+  GHC.HsVar _ _ -> unwords ["HsVar", show $ Outputable.ppr x]
+  GHC.HsUnboundVar _ _ -> "HsUnboundVar"
+  GHC.HsConLikeOut _ _ -> "HsConLikeOut"
+  GHC.HsRecFld _ _ -> "HsRecFld"
+  GHC.HsOverLabel _ _ -> "HsOverLabel"
+  GHC.HsLit _ _ -> "HsLit"
+  GHC.HsLam _ _ -> "HsLam"
+  GHC.HsLamCase _ _ -> "HsLamCase"
+  GHC.HsApp _ a b -> unwords [matchLHsExpr a, matchLHsExpr b]
+
+  _ -> "Rest"
+
+
 parseCommand :: String -> Ghc ()
 parseCommand cmd =
   case List.words cmd of
@@ -113,6 +142,9 @@ parseCommand cmd =
       ":browse" -> browse
       ":browse-ty-cons" -> browseTyCons
       ":type" -> printType (List.concat xs)
+      ":p" ->  do
+        func <- getFunc $ unwords xs
+        liftIO $ (print . matchLHsExpr) func
       ":synth" -> do
         runStackValue <- makeRunStack (List.concat xs)
         liftIO (print runStackValue)

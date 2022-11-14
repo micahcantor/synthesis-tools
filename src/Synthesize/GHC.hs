@@ -118,6 +118,8 @@ getArity = go . removeForAll
 getHoleExpr :: Ghc (LHsExpr GhcPs)
 getHoleExpr = GHC.parseExpr "_"
 
+getFunc :: String -> Ghc (LHsExpr GhcPs)
+getFunc = GHC.parseExpr
 
 
 
