@@ -14,6 +14,7 @@ import GHC.Types.TyThing (TyThing (..))
 import qualified GHC.Types.TyThing as TyThing
 import qualified GHC.Types.Var as Var
 import qualified GHC.Utils.Outputable as Outputable
+import GHC.Core.TyCon
 
 -- Convenience data type for packaging parsed expressions and types
 data TypedExpr = TypedExpr (LHsExpr GhcPs) Type
@@ -119,6 +120,39 @@ getArity = go . removeForAll
         1 + getArity resultTy
       _ -> 0
 
--- construct a hole ('_') expression
 getHoleExpr :: Ghc (LHsExpr GhcPs)
 getHoleExpr = GHC.parseExpr "_"
+
+
+
+
+tyConToType :: GHC.TyCon -> Either GHC.TyCon Type
+tyConToType tc =
+  case synTyConRhs_maybe tc of
+    Nothing -> Left tc
+    Just t -> Right t
+
+typeToTyCon :: Type -> Either Type GHC.TyCon
+typeToTyCon t =
+  case t of
+    (TyConApp tc _) -> Right tc
+    _ -> Left t
+
+unwrapTyCon :: GHC.TyCon -> Either Type GHC.TyCon
+unwrapTyCon tc =
+  case tyConToType tc of
+    Left _ -> Right tc
+    Right t -> case typeToTyCon t of
+      Left ty -> Left ty
+      Right tc2 -> unwrapTyCon tc2
+
+eqTyCon :: GHC.TyCon -> GHC.TyCon -> Bool
+eqTyCon = undefined
+
+eqTyConTy :: GHC.TyCon -> Type -> Bool
+eqTyConTy = undefined
+
+eqTyTyCon :: GHC.TyCon -> Type -> Bool
+eqTyTyCon = undefined
+
+
