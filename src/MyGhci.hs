@@ -132,6 +132,12 @@ matchLHsExpr (SrcLoc.L _ x) = case x of
 
   _ -> "Rest"
 
+extractArgument :: LHsExpr GHC.GhcPs -> LHsExpr GHC.GhcPs
+extractArgument (SrcLoc.L y x) = case x of
+  GHC.HsApp _ a (SrcLoc.L c b) -> case b of
+    GHC.HsApp _ a b -> a
+    _               -> SrcLoc.L c b
+  _ -> SrcLoc.L y x
 
 parseCommand :: String -> Ghc ()
 parseCommand cmd =
