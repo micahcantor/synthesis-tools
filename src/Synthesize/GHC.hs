@@ -55,6 +55,11 @@ removeForAll t = case t of
   ForAllTy _ t1 -> removeForAll t1
   _ -> t
 
+getArgType :: Type -> Maybe Type
+getArgType ty = do
+  (_, argType, _) <- Type.splitFunTy_maybe (removeForAll ty)
+  pure argType
+
 -- Get a TyCon in the current scope, throw if not found
 getTyConInScope :: HasCallStack => String -> Ghc TyCon
 getTyConInScope s = do
