@@ -72,7 +72,7 @@ getUnwrappingFunctionExpr stackTyCon = do
 buildUnwrapperApplication :: GhcMonad m => [TypedExpr] -> LHsExpr GhcPs -> m (LHsExpr GhcPs)
 buildUnwrapperApplication unwrapperTypedExprs paramExpr = do
   holeExpr <- getHoleExpr
-  pure (go holeExpr unwrapperTypedExprs)
+  pure $ GHC.stripParensLHsExpr (go holeExpr unwrapperTypedExprs)
   where
     go holeExpr exprs = case exprs of
       [] -> paramExpr
