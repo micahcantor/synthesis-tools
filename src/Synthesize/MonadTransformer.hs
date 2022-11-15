@@ -33,11 +33,11 @@ newtype SynthesizeM a = SynthesizeM {unSynthesizeM :: ExceptT SynthesisError Ghc
 {- For some reason these two couldn't be automatically derived -}
 instance HasLogger SynthesizeM where
   getLogger :: SynthesizeM GHC.Logger
-  getLogger = SynthesizeM $ lift GHC.getLogger
+  getLogger = SynthesizeM (lift GHC.getLogger)
 
 instance GhcMonad SynthesizeM where
   getSession :: SynthesizeM HscEnv
-  getSession = SynthesizeM $ lift GHC.getSession
+  getSession = SynthesizeM (lift GHC.getSession)
 
   setSession :: HscEnv -> SynthesizeM ()
   setSession = SynthesizeM . lift . GHC.setSession
@@ -68,13 +68,13 @@ getUnwrappingFunctionExpr stackTyCon = do
           Nothing -> False
         Nothing -> False
 
-buildUnwrapperApplication :: GhcMonad m => [TypedExpr] -> m (LHsExpr GhcPs)
-buildUnwrapperApplication unwrapperTypedExprs = do
+buildUnwrapperApplication :: GhcMonad m => [TypedExpr] -> LHsExpr GhcPs -> m (LHsExpr GhcPs)
+buildUnwrapperApplication unwrapperTypedExprs paramExpr = do
   holeExpr <- getHoleExpr
   pure (go holeExpr unwrapperTypedExprs)
   where
     go holeExpr exprs = case exprs of
-      [] -> holeExpr
+      [] -> paramExpr
       (TypedExpr expr ty) : typedExprs ->
         let arity = getArity ty
          in if arity == 1
@@ -84,12 +84,12 @@ buildUnwrapperApplication unwrapperTypedExprs = do
                  in Hs.Utils.mkHsApps expr (holes ++ [go holeExpr typedExprs])
 
 -- Synthesize an expression to run a monad stack, given the target function name and stack type
-synthesizeRunStack :: Type -> SynthesizeM HValue
-synthesizeRunStack stackType = do
+synthesizeRunStack :: Type -> LHsExpr GhcPs -> SynthesizeM HValue
+synthesizeRunStack stackType paramExpr = do
   identityTyCon <- getIdentityTyCon
   ioTyCon <- getIOTyCon
   unwrappers <- getUnwrappers stackType ioTyCon identityTyCon
-  app <- buildUnwrapperApplication (reverse unwrappers)
+  app <- buildUnwrapperApplication (reverse unwrappers) paramExpr
   liftIO $ printf "Generated expr: %s\n" (show (Outputable.ppr app))
   GHC.compileParsedExpr app
   where
@@ -114,10 +114,11 @@ synthesizeRunStack stackType = do
               innerUnwrappers <- getUnwrappers innerMonad ioTyCon identityTyCon
               pure (unwrapper : innerUnwrappers)
 
-makeRunStack :: String -> Ghc (Either SynthesisError HValue)
-makeRunStack functionName = runSynthesizeM $ do
+makeRunStack :: String -> String -> Ghc (Either SynthesisError HValue)
+makeRunStack functionName paramName = runSynthesizeM $ do
   liftIO (printf "Synthesizing '%s'\n" functionName)
   functionType <- GHC.exprType GHC.TM_Inst functionName
+  paramExpr <- GHC.parseExpr paramName
   case getArgType functionType of
-    Just stackType -> synthesizeRunStack stackType
+    Just stackType -> synthesizeRunStack stackType paramExpr
     Nothing -> throwError (InvalidTarget functionName)
