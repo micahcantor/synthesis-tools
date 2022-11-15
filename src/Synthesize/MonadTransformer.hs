@@ -1,6 +1,5 @@
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE InstanceSigs #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 
 module Synthesize.MonadTransformer where
 
@@ -16,7 +15,7 @@ import GHC.Driver.Session (HasDynFlags)
 import GHC.Hs (GhcPs)
 import qualified GHC.Hs.Utils as Hs.Utils
 import qualified GHC.Types.Var as Var
-import GHC.Utils.Logger (HasLogger)
+import GHC.Utils.Logger (HasLogger, Logger)
 import qualified GHC.Utils.Outputable as Outputable
 import Synthesize.GHC
 import Text.Printf (printf)
@@ -32,7 +31,7 @@ newtype SynthesizeM a = SynthesizeM {unSynthesizeM :: ExceptT SynthesisError Ghc
 
 {- For some reason these two couldn't be automatically derived -}
 instance HasLogger SynthesizeM where
-  getLogger :: SynthesizeM GHC.Logger
+  getLogger :: SynthesizeM Logger
   getLogger = SynthesizeM (lift GHC.getLogger)
 
 instance GhcMonad SynthesizeM where
