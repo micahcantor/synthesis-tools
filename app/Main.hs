@@ -7,5 +7,5 @@ main :: IO ()
 main = do
   args <- getArgs
   case args of
-    [fileName, functionName] -> Synthesize.Run.runSynthesis fileName functionName
-    _ -> putStrLn "Usage: ghc-hacking <file name> <function name>"
+    [fileName, functionName, paramName] -> Synthesize.Run.runSynthesis fileName functionName paramName
+    _ -> putStrLn "Usage: ghc-hacking <file name> <function name> <parameter name>"

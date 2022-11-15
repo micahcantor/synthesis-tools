@@ -4,7 +4,7 @@ import Control.Monad.IO.Class (MonadIO (liftIO))
 import GHC (Ghc, HscEnv, runGhc)
 import qualified GHC
 import qualified GHC.Paths
-import Synthesize.MonadTransformer
+import Synthesize.MonadTransformer ( makeRunStack )
 import qualified System.FilePath as FilePath
 
 -- Create a new GHC interactive session
@@ -36,9 +36,9 @@ load path = do
     GHC.Failed ->
       liftIO $ putStrLn ("Failed to load file: " <> path)
 
-runSynthesis :: FilePath -> String -> IO ()
-runSynthesis fileName functionName = do
+runSynthesis :: FilePath -> String -> String -> IO ()
+runSynthesis fileName functionName paramName = do
   initialEnv <- initSession
   loadedEnv <- withEnv initialEnv (load fileName)
-  synthesisResult <- makeRunStack loadedEnv functionName
+  synthesisResult <- makeRunStack loadedEnv functionName paramName
   print synthesisResult

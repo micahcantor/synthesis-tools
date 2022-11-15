@@ -16,6 +16,10 @@ import GHC.Types.TyThing (TyThing (..))
 import qualified GHC.Types.TyThing as TyThing
 import qualified GHC.Types.Var as Var
 import qualified GHC.Utils.Outputable as Outputable
+import GHC.Core.TyCon
+import GHC.Parser.Annotation as Annotation
+import GHC.Types.SrcLoc as SrcLoc
+import Language.Haskell.Syntax.Extension as Extension
 
 -- Convenience data type for packaging parsed expressions and types
 data TypedExpr = TypedExpr (LHsExpr GhcPs) Type
@@ -124,33 +128,15 @@ getArity = go . removeForAll
 getHoleExpr :: GhcMonad m => m (LHsExpr GhcPs)
 getHoleExpr = GHC.parseExpr "_"
 
---------------------------------------------
+getFunc :: GhcMonad m => String -> m (LHsExpr GhcPs)
+getFunc = GHC.parseExpr
 
-tyConToType :: GHC.TyCon -> Either GHC.TyCon Type
-tyConToType tc =
-  case synTyConRhs_maybe tc of
-    Nothing -> Left tc
-    Just t -> Right t
+extractArgument :: LHsExpr GhcPs -> LHsExpr GhcPs
+extractArgument (SrcLoc.L y x) = case x of
+  GHC.HsApp _ _ (SrcLoc.L c b) -> case b of
+    GHC.HsApp _ a _ -> a
+    _ -> SrcLoc.L c b
+  _ -> SrcLoc.L y x
 
-typeToTyCon :: Type -> Either Type GHC.TyCon
-typeToTyCon t =
-  case t of
-    (TyConApp tc _) -> Right tc
-    _ -> Left t
-
-unwrapTyCon :: GHC.TyCon -> Either Type GHC.TyCon
-unwrapTyCon tc =
-  case tyConToType tc of
-    Left _ -> Right tc
-    Right t -> case typeToTyCon t of
-      Left ty -> Left ty
-      Right tc2 -> unwrapTyCon tc2
-
-eqTyCon :: GHC.TyCon -> GHC.TyCon -> Bool
-eqTyCon = undefined
-
-eqTyConTy :: GHC.TyCon -> Type -> Bool
-eqTyConTy = undefined
-
-eqTyTyCon :: GHC.TyCon -> Type -> Bool
-eqTyTyCon = undefined
+argA :: GhcMonad m => m (LHsExpr GhcPs)
+argA = extractArgument <$> getFunc "unwords a"

@@ -66,28 +66,29 @@ getUnwrappingFunctionExpr stackTyCon = do
           Nothing -> False
         Nothing -> False
 
-buildUnwrapperApplication :: GhcMonad m => [TypedExpr] -> m (LHsExpr GhcPs)
-buildUnwrapperApplication unwrapperTypedExprs = do
+buildUnwrapperApplication :: GhcMonad m => [TypedExpr] -> String -> m (LHsExpr GhcPs)
+buildUnwrapperApplication unwrapperTypedExprs paramName = do
+  paramExpr <- extractArgument <$> getFunc paramName
   holeExpr <- getHoleExpr
-  pure (go holeExpr unwrapperTypedExprs)
+  pure (go holeExpr paramExpr unwrapperTypedExprs)
   where
-    go holeExpr exprs = case exprs of
-      [] -> holeExpr
+    go holeExpr paramExpr exprs = case exprs of
+      [] -> paramExpr
       (TypedExpr expr ty) : typedExprs ->
         let arity = getArity ty
          in if arity == 1
-              then Hs.Utils.mkHsApp expr (go holeExpr typedExprs)
+              then Hs.Utils.mkHsApp expr (go holeExpr paramExpr typedExprs)
               else
                 let holes = replicate (arity - 1) holeExpr
-                 in Hs.Utils.mkHsApps expr (holes ++ [go holeExpr typedExprs])
+                 in Hs.Utils.mkHsApps expr (holes ++ [go holeExpr paramExpr typedExprs])
 
 -- Synthesize an expression to run a monad stack, given the target function name and stack type
-synthesizeRunStack :: Type -> SynthesizeM HValue
-synthesizeRunStack stackType = do
+synthesizeRunStack :: Type -> String -> SynthesizeM HValue
+synthesizeRunStack stackType paramName = do
   identityTyCon <- getIdentityTyCon
   ioTyCon <- getIOTyCon
   unwrappers <- getUnwrappers stackType ioTyCon identityTyCon
-  app <- buildUnwrapperApplication (reverse unwrappers)
+  app <- buildUnwrapperApplication (reverse unwrappers) paramName
   liftIO $ printf "Generated expr: %s\n" (show (Outputable.ppr app))
   GHC.compileParsedExpr app
   where
@@ -97,20 +98,22 @@ synthesizeRunStack stackType = do
       stackTyCon <- case tyToTyCon stackType' of
         Just tyCon -> pure tyCon
         Nothing -> throwError (InvalidTarget "<name>")
-      if ioTyCon == stackTyCon then 
-        pure []
-      else if identityTyCon == stackTyCon then do
-        unwrapIdentity <- getRunIdentityTypedExpr
-        pure [unwrapIdentity]
-      else do
-        unwrapper <- getUnwrappingFunctionExpr stackTyCon
-        innerUnwrappers <- getUnwrappers (getInnerMonad stackType') ioTyCon identityTyCon
-        pure (unwrapper : innerUnwrappers)
+      if ioTyCon == stackTyCon
+        then pure []
+        else
+          if identityTyCon == stackTyCon
+            then do
+              unwrapIdentity <- getRunIdentityTypedExpr
+              pure [unwrapIdentity]
+            else do
+              unwrapper <- getUnwrappingFunctionExpr stackTyCon
+              innerUnwrappers <- getUnwrappers (getInnerMonad stackType') ioTyCon identityTyCon
+              pure (unwrapper : innerUnwrappers)
 
-makeRunStack :: HscEnv -> String -> IO (Either SynthesisError HValue)
-makeRunStack env functionName = runSynthesizeM env $ do
+makeRunStack :: HscEnv -> String -> String -> IO (Either SynthesisError HValue)
+makeRunStack env functionName paramName = runSynthesizeM env $ do
   liftIO (printf "Synthesizing '%s'\n" functionName)
   functionType <- GHC.exprType GHC.TM_Inst functionName
   case getArgType functionType of
-    Just stackType -> synthesizeRunStack stackType
+    Just stackType -> synthesizeRunStack stackType paramName
     Nothing -> throwError (InvalidTarget functionName)
