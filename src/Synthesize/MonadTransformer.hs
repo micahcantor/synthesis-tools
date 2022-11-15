@@ -30,6 +30,7 @@ data SynthesisError
 newtype SynthesizeM a = SynthesizeM {unSynthesizeM :: ExceptT SynthesisError Ghc a}
   deriving (Functor, Applicative, Monad, MonadError SynthesisError, MonadThrow, MonadCatch, MonadMask, MonadIO, HasDynFlags)
 
+{- For some reason these two couldn't be automatically derived -}
 instance HasLogger SynthesizeM where
   getLogger :: SynthesizeM GHC.Logger
   getLogger = SynthesizeM $ lift GHC.getLogger
@@ -41,7 +42,7 @@ instance GhcMonad SynthesizeM where
   setSession :: HscEnv -> SynthesizeM ()
   setSession = SynthesizeM . lift . GHC.setSession
 
--- Isn't this ironic
+-- Isn't this ironic. Don't unwrap Ghc since we do that in Run.hs with the loaded environment
 runSynthesizeM :: SynthesizeM a -> Ghc (Either SynthesisError a)
 runSynthesizeM = runExceptT . unSynthesizeM
 

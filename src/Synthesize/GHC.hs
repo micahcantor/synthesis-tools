@@ -8,7 +8,6 @@ import qualified GHC.Core.TyCon as TyCon
 import qualified GHC.Core.Type as Type
 import GHC.Driver.Monad (GhcMonad)
 import GHC.Hs (GhcPs)
-import GHC.Stack (HasCallStack)
 import GHC.Types.Id (Id)
 import qualified GHC.Types.Name as Name
 import GHC.Types.SrcLoc as SrcLoc (GenLocated (L))
@@ -60,37 +59,41 @@ getArgType ty = do
   (_, argType, _) <- Type.splitFunTy_maybe (removeForAll ty)
   pure argType
 
--- Get a TyCon in the current scope, throw if not found
-getTyConInScope :: (HasCallStack, GhcMonad m) => String -> m TyCon
+-- Try to get a TyCon in the current scope
+getTyConInScope :: GhcMonad m => String -> m (Maybe TyCon)
 getTyConInScope s = do
   names <- GHC.parseName s
   tyThings <- Maybe.catMaybes <$> traverse GHC.lookupName names
   let tyCons = Maybe.mapMaybe tyThingTyCon tyThings
-  pure (head tyCons)
+  case tyCons of
+    [] -> pure Nothing
+    (tyCon : _) -> pure (Just tyCon)
 
--- Get an expression in the current scope, throw if not found
-getTypedExprInScope :: (HasCallStack, GhcMonad m) => String -> m TypedExpr
+-- Try to get an expression in the current scope
+getTypedExprInScope :: GhcMonad m => String -> m (Maybe TypedExpr)
 getTypedExprInScope s = do
   names <- GHC.parseName s
   tyThings <- Maybe.catMaybes <$> traverse GHC.lookupName names
   typedExprs <- traverse tyThingToTypedExpr tyThings
-  pure (head typedExprs)
+  case typedExprs of
+    [] -> pure Nothing
+    (expr : _) -> pure (Just expr)
 
 -- Construct the Identity monad type
 getIdentityTyCon :: GhcMonad m => m TyCon
 getIdentityTyCon = do
   addImport "Data.Functor.Identity"
-  getTyConInScope "Identity"
+  Maybe.fromJust <$> getTyConInScope "Identity"
 
 -- Construct the runIdentity function
-getRunIdentityTypedExpr :: (HasCallStack, GhcMonad m) => m TypedExpr
+getRunIdentityTypedExpr :: GhcMonad m => m TypedExpr
 getRunIdentityTypedExpr = do
   addImport "Data.Functor.Identity"
-  getTypedExprInScope "runIdentity"
+  Maybe.fromJust <$> getTypedExprInScope "runIdentity"
 
 -- Construct the IO monad type
 getIOTyCon :: GhcMonad m => m TyCon
-getIOTyCon = getTyConInScope "IO"
+getIOTyCon = Maybe.fromJust <$> getTyConInScope "IO"
 
 -- Get all Ids of names in scope
 getBindingIdsInScope :: GhcMonad m => m [Id]
@@ -112,7 +115,7 @@ getInnerMonad stackType =
 lookupTyConSynonym :: TyCon -> TyCon
 lookupTyConSynonym tyCon =
   case TyCon.synTyConRhs_maybe tyCon of
-    Just ty -> lookupTyConSynonym (Maybe.fromJust (tyToTyCon ty))
+    Just ty -> maybe tyCon lookupTyConSynonym (tyToTyCon ty)
     Nothing -> tyCon
 
 -- Get the arity of a funtion type, return 0 if not function
