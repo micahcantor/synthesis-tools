@@ -8,18 +8,19 @@ import Synthesize.MonadTransformer ( makeRunStack )
 import qualified System.FilePath as FilePath
 
 -- Create a new GHC interactive session
-initSession :: IO HscEnv
-initSession = GHC.runGhc (Just GHC.Paths.libdir) $ do
+initSession :: Ghc HscEnv
+initSession = do
   dflags <- GHC.getSessionDynFlags
   GHC.setSessionDynFlags (dflags {GHC.ghcLink = GHC.LinkInMemory, GHC.backend = GHC.Interpreter})
   GHC.getSession
 
 -- Run a Ghc action with a given environment
-withEnv :: HscEnv -> Ghc () -> IO HscEnv
-withEnv env action = GHC.runGhc (Just GHC.Paths.libdir) $ do
+withEnv :: HscEnv -> Ghc a -> Ghc (HscEnv, a)
+withEnv env action = do
   GHC.setSession env
-  action
-  GHC.getSession
+  result <- action
+  env' <- GHC.getSession
+  pure (env', result)
 
 -- Load a Haskell file into an interactive session
 load :: String -> Ghc ()
@@ -37,8 +38,8 @@ load path = do
       liftIO $ putStrLn ("Failed to load file: " <> path)
 
 runSynthesis :: FilePath -> String -> IO ()
-runSynthesis fileName functionName = do
+runSynthesis fileName functionName = GHC.runGhc (Just GHC.Paths.libdir) $ do
   initialEnv <- initSession
-  loadedEnv <- withEnv initialEnv (load fileName)
-  synthesisResult <- makeRunStack loadedEnv functionName
-  print synthesisResult
+  (loadedEnv, _) <- withEnv initialEnv (load fileName)
+  (_, synthesisResult) <- withEnv loadedEnv (makeRunStack functionName)
+  liftIO $ print synthesisResult

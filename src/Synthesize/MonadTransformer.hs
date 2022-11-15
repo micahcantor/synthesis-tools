@@ -5,16 +5,16 @@
 module Synthesize.MonadTransformer where
 
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
-import Control.Monad.Except (ExceptT, MonadError, catchError, runExceptT, throwError)
+import Control.Monad.Except (ExceptT, MonadError, runExceptT, throwError)
 import Control.Monad.IO.Class (MonadIO (liftIO))
+import Control.Monad.Trans (MonadTrans (lift))
 import Data.Traversable (for)
-import GHC (GhcT, HValue, HscEnv, LHsExpr, TyCon, Type)
+import GHC (Ghc, HValue, HscEnv, LHsExpr, TyCon, Type)
 import qualified GHC
-import GHC.Driver.Monad (GhcMonad, liftGhcT)
+import GHC.Driver.Monad (GhcMonad)
 import GHC.Driver.Session (HasDynFlags)
 import GHC.Hs (GhcPs)
 import qualified GHC.Hs.Utils as Hs.Utils
-import qualified GHC.Paths
 import qualified GHC.Types.Var as Var
 import GHC.Utils.Logger (HasLogger)
 import qualified GHC.Utils.Outputable as Outputable
@@ -27,21 +27,23 @@ data SynthesisError
   | NoUnwrapperFound String
   deriving (Show, Eq)
 
-newtype SynthesizeM a = SynthesizeM {unSynthesizeM :: GhcT (ExceptT SynthesisError IO) a}
-  deriving (Functor, Applicative, Monad, MonadThrow, MonadCatch, MonadMask, MonadIO, HasDynFlags, HasLogger, GhcMonad)
+newtype SynthesizeM a = SynthesizeM {unSynthesizeM :: ExceptT SynthesisError Ghc a}
+  deriving (Functor, Applicative, Monad, MonadError SynthesisError, MonadThrow, MonadCatch, MonadMask, MonadIO, HasDynFlags)
 
-runSynthesizeM :: HscEnv -> SynthesizeM a -> IO (Either SynthesisError a)
-runSynthesizeM env m = runExceptT $ GHC.runGhcT (Just GHC.Paths.libdir) $ do
-  GHC.setSession env
-  unSynthesizeM m
+instance HasLogger SynthesizeM where
+  getLogger :: SynthesizeM GHC.Logger
+  getLogger = SynthesizeM $ lift GHC.getLogger
 
--- annoyingly, this can't be automatically derived
-instance MonadError SynthesisError SynthesizeM where
-  throwError :: SynthesisError -> SynthesizeM a
-  throwError err = SynthesizeM (liftGhcT (throwError err))
+instance GhcMonad SynthesizeM where
+  getSession :: SynthesizeM HscEnv
+  getSession = SynthesizeM $ lift GHC.getSession
 
-  catchError :: SynthesizeM a -> (SynthesisError -> SynthesizeM a) -> SynthesizeM a
-  catchError = undefined
+  setSession :: HscEnv -> SynthesizeM ()
+  setSession = SynthesizeM . lift . GHC.setSession
+
+-- Isn't this ironic
+runSynthesizeM :: SynthesizeM a -> Ghc (Either SynthesisError a)
+runSynthesizeM = runExceptT . unSynthesizeM
 
 -- Try to get an unwrapping function expression for a given type
 getUnwrappingFunctionExpr :: TyCon -> SynthesizeM TypedExpr
@@ -111,8 +113,8 @@ synthesizeRunStack stackType = do
               innerUnwrappers <- getUnwrappers innerMonad ioTyCon identityTyCon
               pure (unwrapper : innerUnwrappers)
 
-makeRunStack :: HscEnv -> String -> IO (Either SynthesisError HValue)
-makeRunStack env functionName = runSynthesizeM env $ do
+makeRunStack :: String -> Ghc (Either SynthesisError HValue)
+makeRunStack functionName = runSynthesizeM $ do
   liftIO (printf "Synthesizing '%s'\n" functionName)
   functionType <- GHC.exprType GHC.TM_Inst functionName
   case getArgType functionType of
