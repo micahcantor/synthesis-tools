@@ -8,4 +8,5 @@ main = do
   args <- getArgs
   case args of
     [fileName, functionName, paramName] -> Synthesize.Run.runSynthesis fileName functionName paramName
-    _ -> putStrLn "Usage: ghc-hacking <file name> <function name> <parameter name>"
+    [fileName, functionName] -> Synthesize.Run.runSynthesis fileName functionName "_param"
+    _ -> putStrLn "Usage: ghc-hacking <file name> <function name> [<parameter name>]"
