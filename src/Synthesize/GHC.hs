@@ -1,10 +1,9 @@
 module Synthesize.GHC where
 
 import qualified Data.Maybe as Maybe
-import GHC (LHsExpr, TyCon, Type)
+import GHC (LHsExpr, TyCon, TyThing (..), Type)
 import qualified GHC
 import GHC.Core.TyCo.Rep (Type (..))
-import GHC.Core.TyCon (synTyConRhs_maybe)
 import qualified GHC.Core.TyCon as TyCon
 import qualified GHC.Core.Type as Type
 import GHC.Driver.Monad (GhcMonad)
@@ -12,14 +11,10 @@ import GHC.Hs (GhcPs)
 import GHC.Stack (HasCallStack)
 import GHC.Types.Id (Id)
 import qualified GHC.Types.Name as Name
-import GHC.Types.TyThing (TyThing (..))
+import GHC.Types.SrcLoc as SrcLoc (GenLocated (L))
 import qualified GHC.Types.TyThing as TyThing
 import qualified GHC.Types.Var as Var
 import qualified GHC.Utils.Outputable as Outputable
-import GHC.Core.TyCon
-import GHC.Parser.Annotation as Annotation
-import GHC.Types.SrcLoc as SrcLoc
-import Language.Haskell.Syntax.Extension as Extension
 
 -- Convenience data type for packaging parsed expressions and types
 data TypedExpr = TypedExpr (LHsExpr GhcPs) Type
@@ -105,9 +100,13 @@ getBindingIdsInScope = do
   let ids = map TyThing.tyThingId tyThings
   pure ids
 
--- Get inner monad from outer stack
-getInnerMonad :: HasCallStack => Type -> Type
-getInnerMonad stackType = snd (Type.splitAppTys (removeForAll stackType)) !! 1
+-- Try to get inner monad from outer stack
+getInnerMonad :: Type -> Maybe Type
+getInnerMonad stackType =
+  let (_, typeArgs) = Type.splitAppTys (removeForAll stackType)
+   in case typeArgs of
+    (_ : m : _) -> Just m
+    _ -> Nothing
 
 -- Disambiguate a TyCon into its synonym, recursively
 lookupTyConSynonym :: TyCon -> TyCon

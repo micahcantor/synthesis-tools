@@ -36,9 +36,9 @@ load path = do
     GHC.Failed ->
       liftIO $ putStrLn ("Failed to load file: " <> path)
 
-runSynthesis :: FilePath -> String -> String -> IO ()
-runSynthesis fileName functionName paramName = do
+runSynthesis :: FilePath -> String -> IO ()
+runSynthesis fileName functionName = do
   initialEnv <- initSession
   loadedEnv <- withEnv initialEnv (load fileName)
-  synthesisResult <- makeRunStack loadedEnv functionName paramName
+  synthesisResult <- makeRunStack loadedEnv functionName
   print synthesisResult
