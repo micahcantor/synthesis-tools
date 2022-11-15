@@ -20,6 +20,7 @@ import GHC.Utils.Logger (HasLogger)
 import qualified GHC.Utils.Outputable as Outputable
 import Synthesize.GHC
 import Text.Printf (printf)
+import GHC.Core.TyCo.Ppr (appPrec)
 
 data SynthesisError
   = UnknownTarget String
@@ -78,10 +79,10 @@ buildUnwrapperApplication unwrapperTypedExprs paramExpr = do
       (TypedExpr expr ty) : typedExprs ->
         let arity = getArity ty
          in if arity == 1
-              then Hs.Utils.mkHsApp expr (go holeExpr typedExprs)
+              then GHC.parenthesizeHsExpr appPrec (Hs.Utils.mkHsApp expr (go holeExpr typedExprs))
               else
                 let holes = replicate (arity - 1) holeExpr
-                 in Hs.Utils.mkHsApps expr (holes ++ [go holeExpr typedExprs])
+                 in GHC.parenthesizeHsExpr appPrec (Hs.Utils.mkHsApps expr (holes ++ [go holeExpr typedExprs]))
 
 -- Synthesize an expression to run a monad stack, given the target function name and stack type
 synthesizeRunStack :: Type -> LHsExpr GhcPs -> SynthesizeM HValue
