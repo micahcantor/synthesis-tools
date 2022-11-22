@@ -33,7 +33,6 @@ load path = do
       let loadedModule = GHC.IIModule (GHC.mkModuleName (FilePath.takeBaseName path))
       ctx <- GHC.getContext
       GHC.setContext (loadedModule : ctx)
-      liftIO $ putStrLn ("Successfully loaded file: " <> path)
     GHC.Failed ->
       liftIO $ putStrLn ("Failed to load file: " <> path)
 
@@ -42,4 +41,6 @@ runSynthesis fileName functionName paramName = GHC.runGhc (Just GHC.Paths.libdir
   initialEnv <- initSession
   (loadedEnv, _) <- withEnv initialEnv (load fileName)
   (_, synthesisResult) <- withEnv loadedEnv (makeRunStack functionName paramName)
-  liftIO $ print synthesisResult
+  case synthesisResult of
+    Left err -> liftIO (print err)
+    Right expr -> liftIO (putStrLn expr)

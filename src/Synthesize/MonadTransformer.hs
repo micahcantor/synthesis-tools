@@ -5,10 +5,9 @@ module Synthesize.MonadTransformer where
 
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Control.Monad.Except (ExceptT, MonadError, runExceptT, throwError)
-import Control.Monad.IO.Class (MonadIO (liftIO))
 import Control.Monad.Trans (MonadTrans (lift))
 import Data.Traversable (for)
-import GHC (Ghc, HValue, HscEnv, LHsExpr, TyCon, Type)
+import GHC (Ghc, HscEnv, LHsExpr, TyCon, Type)
 import qualified GHC
 import GHC.Driver.Monad (GhcMonad)
 import GHC.Driver.Session (HasDynFlags)
@@ -18,8 +17,8 @@ import qualified GHC.Types.Var as Var
 import GHC.Utils.Logger (HasLogger, Logger)
 import qualified GHC.Utils.Outputable as Outputable
 import Synthesize.GHC
-import Text.Printf (printf)
 import GHC.Core.TyCo.Ppr (appPrec)
+import Control.Monad.IO.Class (MonadIO)
 
 data SynthesisError
   = UnknownTarget String
@@ -84,14 +83,13 @@ buildUnwrapperApplication unwrapperTypedExprs paramExpr = do
                  in GHC.parenthesizeHsExpr appPrec (Hs.Utils.mkHsApps expr (holes ++ [go holeExpr typedExprs]))
 
 -- Synthesize an expression to run a monad stack, given the target function name and stack type
-synthesizeRunStack :: Type -> LHsExpr GhcPs -> SynthesizeM HValue
+synthesizeRunStack :: Type -> LHsExpr GhcPs -> SynthesizeM String
 synthesizeRunStack stackType paramExpr = do
   identityTyCon <- getIdentityTyCon
   ioTyCon <- getIOTyCon
   unwrappers <- getUnwrappers stackType ioTyCon identityTyCon
   app <- buildUnwrapperApplication (reverse unwrappers) paramExpr
-  liftIO $ printf "Generated expr: %s\n" (show (Outputable.ppr app))
-  GHC.compileParsedExpr app
+  pure (show (Outputable.ppr app))
   where
     -- Recursively get unwrapping functions for the stack
     getUnwrappers :: Type -> TyCon -> TyCon -> SynthesizeM [TypedExpr]
@@ -114,9 +112,8 @@ synthesizeRunStack stackType paramExpr = do
               innerUnwrappers <- getUnwrappers innerMonad ioTyCon identityTyCon
               pure (unwrapper : innerUnwrappers)
 
-makeRunStack :: String -> String -> Ghc (Either SynthesisError HValue)
+makeRunStack :: String -> String -> Ghc (Either SynthesisError String)
 makeRunStack functionName paramName = runSynthesizeM $ do
-  liftIO (printf "Synthesizing '%s'\n" functionName)
   functionType <- GHC.exprType GHC.TM_Inst functionName
   paramExpr <- GHC.parseExpr paramName
   case getArgType functionType of
