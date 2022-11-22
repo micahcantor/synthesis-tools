@@ -80,7 +80,7 @@ buildUnwrapperApplication unwrapperTypedExprs paramExpr = do
               then GHC.parenthesizeHsExpr appPrec (Hs.Utils.mkHsApp expr (go holeExpr typedExprs))
               else
                 let holes = replicate (arity - 1) holeExpr
-                 in GHC.parenthesizeHsExpr appPrec (Hs.Utils.mkHsApps expr (holes ++ [go holeExpr typedExprs]))
+                 in GHC.parenthesizeHsExpr appPrec (Hs.Utils.mkHsApps expr (go holeExpr typedExprs : holes))
 
 -- Synthesize an expression to run a monad stack, given the target function name and stack type
 synthesizeRunStack :: Type -> LHsExpr GhcPs -> SynthesizeM String
