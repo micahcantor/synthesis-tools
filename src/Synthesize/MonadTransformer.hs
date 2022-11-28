@@ -24,7 +24,13 @@ data SynthesisError
   = UnknownTarget String
   | InvalidTarget String
   | NoUnwrapperFound String
-  deriving (Show, Eq)
+  deriving (Eq)
+
+instance Show SynthesisError where
+  show err = case err of
+    UnknownTarget name -> "Unknown target: '" <> name <> "'"
+    InvalidTarget name -> "Invalid target: '" <> name <> "'"
+    NoUnwrapperFound name -> "No unwrapper found in scope for '" <> name <> "'"
 
 newtype SynthesizeM a = SynthesizeM {unSynthesizeM :: ExceptT SynthesisError Ghc a}
   deriving (Functor, Applicative, Monad, MonadError SynthesisError, MonadThrow, MonadCatch, MonadMask, MonadIO, HasDynFlags)
@@ -114,8 +120,12 @@ synthesizeRunStack stackType paramExpr = do
 
 makeRunStack :: String -> String -> Ghc (Either SynthesisError String)
 makeRunStack functionName paramName = runSynthesizeM $ do
-  functionType <- GHC.exprType GHC.TM_Inst functionName
-  paramExpr <- GHC.parseExpr paramName
-  case getArgType functionType of
-    Just stackType -> synthesizeRunStack stackType paramExpr
-    Nothing -> throwError (InvalidTarget functionName)
+  parseResult <- GHC.parseName functionName
+  case parseResult of
+    [] -> throwError (UnknownTarget functionName)
+    _ -> do
+      functionType <- GHC.exprType GHC.TM_Inst functionName
+      paramExpr <- GHC.parseExpr paramName
+      case getArgType functionType of
+        Just stackType -> synthesizeRunStack stackType paramExpr
+        Nothing -> throwError (InvalidTarget functionName)
