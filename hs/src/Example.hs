@@ -17,10 +17,12 @@ config = undefined
 
 type ErrorStack a = ExceptT Error Identity a
 
+runWrong :: Int -> Int
+runWrong x = undefined
+
 -- correct: runIdentity (runExceptT m)
 runErrorStack :: ErrorStack a -> Either Error a
 runErrorStack m = runIdentity (runExceptT m)
-
 
 type ReaderStack a = ReaderT Config (ExceptT Error Identity) a
 
