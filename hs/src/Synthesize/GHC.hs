@@ -1,3 +1,4 @@
+{-# LANGUAGE ScopedTypeVariables #-}
 module Synthesize.GHC where
 
 import qualified Data.Maybe as Maybe
@@ -16,8 +17,9 @@ import GHC.Types.SrcLoc as SrcLoc (GenLocated (L))
 import qualified GHC.Types.TyThing as TyThing
 import qualified GHC.Types.Var as Var
 import qualified GHC.Utils.Outputable as Outputable
-import Debug.Trace ( traceShow )
+import Debug.Trace ( traceShow, traceShowM )
 import Data.Traversable (for)
+import Control.Exception.Safe (try, SomeException)
 
 -- Convenience data type for packaging parsed expressions and types
 data TypedExpr = TypedExpr (LHsExpr GhcPs) Type
@@ -55,16 +57,23 @@ tyToTyCon ty = case ty of
   TyConApp tyCon _ -> Just tyCon
   _ -> Nothing
 
-tyThingToTypedExpr :: GhcMonad m => TyThing -> m TypedExpr
+tyThingToTypedExpr :: GhcMonad m => TyThing -> m (Maybe TypedExpr)
 tyThingToTypedExpr tyThing = do
   let ident = TyThing.tyThingId tyThing
   let ty = Var.varType ident
-  expr <- identToExpr ident
-  pure (TypedExpr expr ty)
+  exprResult <- identToExpr ident
+  case exprResult of
+    Nothing -> pure Nothing
+    Just expr ->  pure (Just (TypedExpr expr ty))
 
--- Convert an Id into a parsed expression
-identToExpr :: GhcMonad m => Id -> m (LHsExpr GhcPs)
-identToExpr = GHC.parseExpr . show . Outputable.ppr . Var.varName
+-- Try to convert an Id into a parsed expression
+identToExpr :: GhcMonad m => Id -> m (Maybe (LHsExpr GhcPs))
+identToExpr ident = do
+  let identStr = show (Outputable.ppr (Var.varName ident))
+  parseResult <- try (GHC.parseExpr identStr)
+  case parseResult of
+    Left (_ :: SomeException) -> pure Nothing
+    Right expr -> pure (Just expr)
 
 -- Recursively remove the for all type constructors from a Type
 removeForAll :: Type -> Type
@@ -92,7 +101,7 @@ getTypedExprInScope :: GhcMonad m => String -> m (Maybe TypedExpr)
 getTypedExprInScope s = do
   names <- GHC.parseName s
   tyThings <- Maybe.catMaybes <$> traverse GHC.lookupName names
-  typedExprs <- traverse tyThingToTypedExpr tyThings
+  typedExprs <- Maybe.catMaybes <$> traverse tyThingToTypedExpr tyThings
   case typedExprs of
     [] -> pure Nothing
     (expr : _) -> pure (Just expr)
@@ -126,9 +135,13 @@ getTypedExprsInScope = do
   idents <- getBindingIdsInScope
   let types = map Var.varType idents
   let unwrapperIdentTypes = [(ident, ty) | (ident, ty) <- zip idents types]
-  for unwrapperIdentTypes $ \(ident, ty) -> do
-    expr <- identToExpr ident
-    pure (TypedExpr expr ty)
+  unwrapperExprs <- for unwrapperIdentTypes $ \(ident, ty) -> do
+    exprResult <- identToExpr ident
+    case exprResult of
+      Nothing -> pure Nothing
+      Just expr -> pure (Just (TypedExpr expr ty))
+  pure (Maybe.catMaybes unwrapperExprs)
+    
 
 -- Try to get inner monad from outer stack
 getInnerMonad :: Type -> Maybe Type

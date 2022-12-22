@@ -13,22 +13,23 @@ import Synthesize.GHC
 import Synthesize.Monad (SynthesisError (..), SynthesizeM, runSynthesizeM)
 
 -- Try to get an unwrapping function expression for a given type
-getUnwrappingFunctionExpr :: TyCon -> SynthesizeM TypedExpr
-getUnwrappingFunctionExpr stackTyCon = do
-  typedExprs <- getTypedExprsInScope
-  let unwrapperExprs = filter (\(TypedExpr _ ty) -> isUnwrappingType ty stackTyCon) typedExprs
+getUnwrappingFunctionExpr :: String -> TyCon -> [TypedExpr] -> SynthesizeM TypedExpr
+getUnwrappingFunctionExpr functionName stackTyCon typedExprs = do
+  let unwrapperExprs = filter (\(TypedExpr expr ty) -> isUnwrapper expr ty stackTyCon) typedExprs
   case unwrapperExprs of
     [] -> throwError (NoUnwrapperFound (show (Outputable.ppr stackTyCon)))
     (unwrapper : _) -> pure unwrapper
   where
     -- Is a TyCon the first argument of a given type?
-    isUnwrappingType :: Type -> TyCon -> Bool
-    isUnwrappingType ty tyCon =
-      case getArgType ty of
-        Just argType -> case tyToTyCon argType of
-          Just argTyCon -> lookupTyConSynonym tyCon == lookupTyConSynonym argTyCon
-          Nothing -> False
-        Nothing -> False
+    isUnwrapper :: LHsExpr GhcPs -> Type -> TyCon -> Bool
+    isUnwrapper expr ty tyCon =
+      let exprStr = show (Outputable.ppr expr)
+       in exprStr /= functionName
+            && case getArgType ty of
+              Just argType -> case tyToTyCon argType of
+                Just argTyCon -> lookupTyConSynonym tyCon == lookupTyConSynonym argTyCon
+                Nothing -> False
+              Nothing -> False
 
 buildUnwrapperApplication :: GhcMonad m => [TypedExpr] -> LHsExpr GhcPs -> m (LHsExpr GhcPs)
 buildUnwrapperApplication unwrapperTypedExprs paramExpr = do
@@ -46,17 +47,18 @@ buildUnwrapperApplication unwrapperTypedExprs paramExpr = do
                  in GHC.parenthesizeHsExpr appPrec (Hs.Utils.mkHsApps expr (go holeExpr typedExprs : holes))
 
 -- Synthesize an expression to run a monad stack, given the target stack type and param expression
-synthesizeRunStack :: Type -> LHsExpr GhcPs -> SynthesizeM String
-synthesizeRunStack stackType paramExpr = do
+synthesizeRunStack :: String -> Type -> LHsExpr GhcPs -> SynthesizeM String
+synthesizeRunStack functionName stackType paramExpr = do
   identityTyCon <- getIdentityTyCon
   ioTyCon <- getIOTyCon
-  unwrappers <- getUnwrappers stackType ioTyCon identityTyCon
+  typedExprs <- getTypedExprsInScope
+  unwrappers <- getUnwrappers stackType ioTyCon identityTyCon typedExprs
   app <- buildUnwrapperApplication (reverse unwrappers) paramExpr
   pure (show (Outputable.ppr app))
   where
     -- Recursively get unwrapping functions for the stack
-    getUnwrappers :: Type -> TyCon -> TyCon -> SynthesizeM [TypedExpr]
-    getUnwrappers stackType' ioTyCon identityTyCon = do
+    getUnwrappers :: Type -> TyCon -> TyCon -> [TypedExpr] -> SynthesizeM [TypedExpr]
+    getUnwrappers stackType' ioTyCon identityTyCon typedExprs = do
       stackTyCon <- case tyToTyCon stackType' of
         Just tyCon -> pure tyCon
         Nothing -> throwError (InvalidTarget (show (Outputable.ppr stackType')))
@@ -68,11 +70,11 @@ synthesizeRunStack stackType paramExpr = do
               unwrapIdentity <- getRunIdentityTypedExpr
               pure [unwrapIdentity]
             else do
-              unwrapper <- getUnwrappingFunctionExpr stackTyCon
+              unwrapper <- getUnwrappingFunctionExpr functionName stackTyCon typedExprs
               innerMonad <- case getInnerMonad stackType' of
                 Just m -> pure m
                 Nothing -> throwError (InvalidTarget (show (Outputable.ppr stackType')))
-              innerUnwrappers <- getUnwrappers innerMonad ioTyCon identityTyCon
+              innerUnwrappers <- getUnwrappers innerMonad ioTyCon identityTyCon typedExprs
               pure (unwrapper : innerUnwrappers)
 
 makeRunStack :: String -> String -> Ghc (Either SynthesisError String)
@@ -84,5 +86,5 @@ makeRunStack functionName paramName = runSynthesizeM $ do
       functionType <- GHC.exprType GHC.TM_Inst functionName
       paramExpr <- GHC.parseExpr paramName
       case getArgType functionType of
-        Just stackType -> synthesizeRunStack stackType paramExpr
+        Just stackType -> synthesizeRunStack functionName stackType paramExpr
         Nothing -> throwError (InvalidTarget functionName)
