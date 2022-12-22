@@ -36,7 +36,13 @@ The Haskell program under `hs` can be built using `cabal`. To run the program on
 $ cabal run synthesis-tools -- hs/src/Example.hs runAppM m
 ```
 
-To run the program through the extension, first install the VSCode extension found under `vscode`. Then, in the desired Haskell file, select the desired unwrapping function (the name of the function must start with "run"), and use the VSCode hint "Generate definition...". If there is an error, it will be logged in the extension's console.
+To run the program through the extension, first the Haskell program must be installed system-wide. To do this, run 
+
+```
+$ cabal install exe:synthesis-tools
+```
+
+This should add the program `synthesis-tools` to your PATH variable. Next, install the VSCode extension found under `vscode`. Then, in the desired Haskell file, select the desired unwrapping function (the name of the function must start with "run"), and use the VSCode hint "Generate definition...". If there is an error, it will be logged in the extension's console.
 
 ## Acknowledgements
 
