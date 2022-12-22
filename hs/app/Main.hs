@@ -9,4 +9,4 @@ main = do
   case args of
     [fileName, functionName, paramName] -> Synthesize.Run.runSynthesis fileName functionName paramName
     [fileName, functionName] -> Synthesize.Run.runSynthesis fileName functionName "_param"
-    _ -> putStrLn "Usage: ghc-hacking <file name> <function name> [<parameter name>]"
+    _ -> putStrLn "Usage: synthesis-tools <file name> <function name> [<parameter name>]"

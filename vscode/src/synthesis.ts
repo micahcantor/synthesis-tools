@@ -7,7 +7,7 @@ const exec = util.promisify(cp.exec);
 /* Call into cabal to execute the synthesis program */
 export async function runSynthesis(fileName: string, input: string): Promise<Result<string>> {
   // TODO: sanitize input?
-  const { stdout, stderr } = await exec(`ghc-hacking ${fileName} ${input}`);
+  const { stdout, stderr } = await exec(`synthesis-tools ${fileName} ${input}`);
   if (stderr != "")
     return Err(new Error(stdout));
   else
