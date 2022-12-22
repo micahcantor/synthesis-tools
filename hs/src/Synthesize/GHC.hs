@@ -5,7 +5,9 @@ import GHC (LHsExpr, TyCon, TyThing (..), Type)
 import qualified GHC
 import GHC.Core.TyCo.Rep (Type (..))
 import qualified GHC.Core.TyCon as TyCon
+import GHC.Core.Type (TCvSubst (..))
 import qualified GHC.Core.Type as Type
+import qualified GHC.Core.Unify as Unify
 import GHC.Driver.Monad (GhcMonad)
 import GHC.Hs (GhcPs)
 import GHC.Types.Id (Id)
@@ -14,6 +16,8 @@ import GHC.Types.SrcLoc as SrcLoc (GenLocated (L))
 import qualified GHC.Types.TyThing as TyThing
 import qualified GHC.Types.Var as Var
 import qualified GHC.Utils.Outputable as Outputable
+import Debug.Trace ( traceShow )
+import Data.Traversable (for)
 
 -- Convenience data type for packaging parsed expressions and types
 data TypedExpr = TypedExpr (LHsExpr GhcPs) Type
@@ -24,6 +28,20 @@ addImport name = do
   let importedModule = GHC.IIDecl (GHC.simpleImportDecl (GHC.mkModuleName name))
   ctx <- GHC.getContext
   GHC.setContext (importedModule : ctx)
+
+unifyTypeEq :: Type -> Type -> Bool
+unifyTypeEq ty1 ty2 = Maybe.isJust (Unify.tcMatchTyKi ty1 ty2)
+
+-- Try to compare a given type to the type of the first argument of a given function type
+argTypeEq :: Type -> Type -> Bool
+argTypeEq funTy ty =
+  case getArgType funTy of
+    Just funArgTy ->
+      case Unify.tcMatchTyKi funArgTy (removeForAll ty) of
+        Just (TCvSubst _ substEnv _) -> 
+          traceShow (Outputable.ppr substEnv) True
+        Nothing -> False
+    Nothing -> False
 
 -- Try to convert a TyThing into a TyCon
 tyThingTyCon :: TyThing -> Maybe TyCon
@@ -103,13 +121,22 @@ getBindingIdsInScope = do
   let ids = map TyThing.tyThingId tyThings
   pure ids
 
+getTypedExprsInScope :: GhcMonad m => m [TypedExpr]
+getTypedExprsInScope = do
+  idents <- getBindingIdsInScope
+  let types = map Var.varType idents
+  let unwrapperIdentTypes = [(ident, ty) | (ident, ty) <- zip idents types]
+  for unwrapperIdentTypes $ \(ident, ty) -> do
+    expr <- identToExpr ident
+    pure (TypedExpr expr ty)
+
 -- Try to get inner monad from outer stack
 getInnerMonad :: Type -> Maybe Type
 getInnerMonad stackType =
   let (_, typeArgs) = Type.splitAppTys (removeForAll stackType)
    in case typeArgs of
-    (_ : m : _) -> Just m
-    _ -> Nothing
+        (_ : m : _) -> Just m
+        _ -> Nothing
 
 -- Disambiguate a TyCon into its synonym, recursively
 lookupTyConSynonym :: TyCon -> TyCon

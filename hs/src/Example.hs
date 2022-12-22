@@ -1,6 +1,6 @@
 module Example where
 
-import Control.Monad.Except (ExceptT, runExceptT)
+import Control.Monad.Except (ExceptT, runExceptT, Except, runExcept)
 import Control.Monad.Reader (ReaderT (runReaderT))
 import Control.Monad.State
 import Data.Functor.Identity (Identity (runIdentity))
@@ -12,23 +12,30 @@ data Config
 
 data MyState
 
-config :: Config
-config = undefined
+
 
 type ErrorStack a = ExceptT Error Identity a
 
-runWrong :: Int -> Int
-runWrong x = undefined
+myErrorStack :: ErrorStack Int
+myErrorStack = undefined
 
 -- correct: runIdentity (runExceptT m)
 runErrorStack :: ErrorStack a -> Either Error a
 runErrorStack m = runIdentity (runExceptT m)
 
-type ReaderStack a = ReaderT Config (ExceptT Error Identity) a
+data AppConfig
+  
+data AppError
 
--- correct: runIdentity (runExceptT (runReaderT m _))
-runReaderStack :: ReaderStack a -> Either Error a
-runReaderStack m = runIdentity (runExceptT (runReaderT m config))
+type AppM a = ReaderT AppConfig (Except AppError) a
+
+runAppM :: AppM a -> Either AppError a
+runAppM m = runIdentity (runExceptT (runReaderT m initialConfig))
+
+initialConfig :: AppConfig
+initialConfig = undefined
+
+
 
 type StateStack a = StateT MyState (ExceptT Error Identity) a
 

@@ -1,65 +1,22 @@
-{-# LANGUAGE GeneralisedNewtypeDeriving #-}
-{-# LANGUAGE InstanceSigs #-}
-
 module Synthesize.MonadTransformer where
 
-import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
-import Control.Monad.Except (ExceptT, MonadError, runExceptT, throwError)
-import Control.Monad.Trans (MonadTrans (lift))
-import Data.Traversable (for)
-import GHC (Ghc, HscEnv, LHsExpr, TyCon, Type)
+import Control.Monad.Except (MonadError (throwError))
+import Control.Monad.IO.Class (MonadIO (..))
+import GHC (Ghc, LHsExpr, TyCon, Type)
 import qualified GHC
+import GHC.Core.TyCo.Ppr (appPrec)
 import GHC.Driver.Monad (GhcMonad)
-import GHC.Driver.Session (HasDynFlags)
 import GHC.Hs (GhcPs)
 import qualified GHC.Hs.Utils as Hs.Utils
-import qualified GHC.Types.Var as Var
-import GHC.Utils.Logger (HasLogger, Logger)
 import qualified GHC.Utils.Outputable as Outputable
 import Synthesize.GHC
-import GHC.Core.TyCo.Ppr (appPrec)
-import Control.Monad.IO.Class (MonadIO)
-
-data SynthesisError
-  = UnknownTarget String
-  | InvalidTarget String
-  | NoUnwrapperFound String
-  deriving (Eq)
-
-instance Show SynthesisError where
-  show err = case err of
-    UnknownTarget name -> "Unknown target: '" <> name <> "'"
-    InvalidTarget name -> "Invalid target: '" <> name <> "'"
-    NoUnwrapperFound name -> "No unwrapper found in scope for '" <> name <> "'"
-
-newtype SynthesizeM a = SynthesizeM {unSynthesizeM :: ExceptT SynthesisError Ghc a}
-  deriving (Functor, Applicative, Monad, MonadError SynthesisError, MonadThrow, MonadCatch, MonadMask, MonadIO, HasDynFlags)
-
-{- For some reason these two couldn't be automatically derived -}
-instance HasLogger SynthesizeM where
-  getLogger :: SynthesizeM Logger
-  getLogger = SynthesizeM (lift GHC.getLogger)
-
-instance GhcMonad SynthesizeM where
-  getSession :: SynthesizeM HscEnv
-  getSession = SynthesizeM (lift GHC.getSession)
-
-  setSession :: HscEnv -> SynthesizeM ()
-  setSession = SynthesizeM . lift . GHC.setSession
-
--- Isn't this ironic. Don't unwrap Ghc since we do that in Run.hs with the loaded environment
-runSynthesizeM :: SynthesizeM a -> Ghc (Either SynthesisError a)
-runSynthesizeM = runExceptT . unSynthesizeM
+import Synthesize.Monad (SynthesisError (..), SynthesizeM, runSynthesizeM)
 
 -- Try to get an unwrapping function expression for a given type
 getUnwrappingFunctionExpr :: TyCon -> SynthesizeM TypedExpr
 getUnwrappingFunctionExpr stackTyCon = do
-  idents <- getBindingIdsInScope
-  let types = map Var.varType idents
-  let unwrapperIdentTypes = [(ident, ty) | (ident, ty) <- zip idents types, isUnwrappingType ty stackTyCon]
-  unwrapperExprs <- for unwrapperIdentTypes $ \(ident, ty) -> do
-    expr <- identToExpr ident
-    pure (TypedExpr expr ty)
+  typedExprs <- getTypedExprsInScope
+  let unwrapperExprs = filter (\(TypedExpr _ ty) -> isUnwrappingType ty stackTyCon) typedExprs
   case unwrapperExprs of
     [] -> throwError (NoUnwrapperFound (show (Outputable.ppr stackTyCon)))
     (unwrapper : _) -> pure unwrapper
@@ -88,7 +45,7 @@ buildUnwrapperApplication unwrapperTypedExprs paramExpr = do
                 let holes = replicate (arity - 1) holeExpr
                  in GHC.parenthesizeHsExpr appPrec (Hs.Utils.mkHsApps expr (go holeExpr typedExprs : holes))
 
--- Synthesize an expression to run a monad stack, given the target function name and stack type
+-- Synthesize an expression to run a monad stack, given the target stack type and param expression
 synthesizeRunStack :: Type -> LHsExpr GhcPs -> SynthesizeM String
 synthesizeRunStack stackType paramExpr = do
   identityTyCon <- getIdentityTyCon
